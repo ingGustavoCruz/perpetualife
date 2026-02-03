@@ -1,20 +1,16 @@
 <?php
 /**
- * LÓGICA DE DATOS OPTIMIZADA
+ * LÓGICA DE DATOS OPTIMIZADA PARA NUEVA ESTRUCTURA DE IMÁGENES
  */
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
 require_once 'api/conexion.php'; 
 
-$conn->query("SET SESSION group_concat_max_len = 10000;");
+// Ya no necesitamos group_concat_max_len porque no usamos GROUP_CONCAT
 
-// MODIFICACIÓN 1: Se agregó "WHERE p.activo = 1" antes del GROUP BY
-$query = "SELECT p.*, GROUP_CONCAT(i.url_imagen) as lista_imagenes 
-          FROM kaiexper_perpetualife.productos p 
-          LEFT JOIN kaiexper_perpetualife.imagenes_productos i ON p.id = i.producto_id 
-          WHERE p.activo = 1 
-          GROUP BY p.id";
+// MODIFICACIÓN: Consulta directa sin JOINs, mucho más rápida.
+$query = "SELECT * FROM kaiexper_perpetualife.productos WHERE activo = 1";
 
 $resultado = $conn->query($query);
 $productos = [];
@@ -22,9 +18,25 @@ $categorias = ['Todos'];
 
 if ($resultado && $resultado->num_rows > 0) {
     while($row = $resultado->fetch_assoc()) {
-        // Nota: Actualmente las imágenes siguen cargando de la tabla antigua (imagenes_productos).
-        // Si ya migraste a las columnas nuevas (imagen1, imagen2, etc), avísame para ajustar esta línea.
-        $row['imagenes'] = $row['lista_imagenes'] ? explode(',', $row['lista_imagenes']) : ['https://via.placeholder.com/400'];
+        
+        // --- LÓGICA DE IMÁGENES ACTUALIZADA ---
+        $imgs = [];
+        
+        // Verificamos cada columna de imagen y agregamos la ruta 'imgProd/'
+        if (!empty($row['imagen1'])) {
+            $imgs[] = 'imgProd/' . $row['imagen1'];
+        }
+        if (!empty($row['imagen2'])) {
+            $imgs[] = 'imgProd/' . $row['imagen2'];
+        }
+        if (!empty($row['imagen3'])) {
+            $imgs[] = 'imgProd/' . $row['imagen3'];
+        }
+
+        // Si no hay ninguna imagen cargada, ponemos una por defecto
+        $row['imagenes'] = !empty($imgs) ? $imgs : ['https://via.placeholder.com/400?text=Sin+Imagen'];
+        // --------------------------------------
+
         $row['precio'] = (float)$row['precio'];
         $row['precio_anterior'] = $row['precio_anterior'] ? (float)$row['precio_anterior'] : null;
         $row['stock'] = (int)$row['stock'];
