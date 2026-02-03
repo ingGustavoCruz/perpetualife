@@ -1,7 +1,7 @@
 <?php
 /**
  * completarCompra.php - Perpetualife
- * Flujo de Checkout optimizado
+ * Flujo de Checkout con Teléfono y corrección de imágenes
  */
 require_once 'api/conexion.php'; 
 ?>
@@ -12,9 +12,11 @@ require_once 'api/conexion.php';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Finalizar Compra | Perpetualife</title>
     
+    <link rel="icon" type="image/png" href="imagenes/KAI_NG.png">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://www.paypal.com/sdk/js?client-id=AR2yUZcO674dQIfZR6ks44WIf_rq5oLHx9adznrIKHOo5J6qcrKuoGURz3pnSYQwUjBEjEasWT5GWpSW&currency=MXN"></script>
+    <script src="https://www.paypal.com/sdk/js?client-id=test&currency=MXN"></script>
     
     <script>
         tailwind.config = {
@@ -36,12 +38,12 @@ require_once 'api/conexion.php';
                 cliente: {
                     nombre: '',
                     email: '',
+                    telefono: '', // NUEVO CAMPO
                     direccion: ''
                 },
                 isProcessing: false,
 
                 init() {
-                    // Si el carrito está vacío, regresamos al index
                     if (this.cart.length === 0) {
                         alert("Tu carrito está vacío");
                         window.location.href = 'index.php';
@@ -50,14 +52,22 @@ require_once 'api/conexion.php';
                     this.renderPayPal();
                 },
 
+                procesarImagen(img) {
+                    if (!img) return 'https://via.placeholder.com/150';
+                    if (img.includes('http')) return img;
+                    if (img.includes('imgProd/')) return img;
+                    return 'imgProd/' + img;
+                },
+
                 totalPrice() {
                     return this.cart.reduce((s, i) => s + (i.precio * i.qty), 0).toFixed(2);
                 },
 
                 formValido() {
-                    // Validación simple: campos no vacíos y email con formato
+                    // VALIDACIÓN ACTUALIZADA CON TELÉFONO
                     return this.cliente.nombre.length > 2 && 
                            this.cliente.email.includes('@') && 
+                           this.cliente.telefono.length > 9 && // Mínimo 10 dígitos
                            this.cliente.direccion.length > 5;
                 },
 
@@ -65,10 +75,9 @@ require_once 'api/conexion.php';
                     paypal.Buttons({
                         style: { layout: 'vertical', color: 'blue', shape: 'pill', label: 'pay' },
                         
-                        // Solo permitimos crear la orden si el formulario es válido
                         onClick: (data, actions) => {
                             if (!this.formValido()) {
-                                alert("Por favor, completa tus datos de envío correctamente antes de proceder al pago.");
+                                alert("Por favor, completa todos los datos de envío (incluyendo teléfono) antes de proceder.");
                                 return actions.reject();
                             }
                         },
@@ -91,14 +100,13 @@ require_once 'api/conexion.php';
                                         orderID: data.orderID,
                                         cart: this.cart,
                                         total: this.totalPrice(),
-                                        cliente: this.cliente
+                                        cliente: this.cliente // Aquí ya va el teléfono incluido
                                     })
                                 })
                                 .then(res => res.json())
                                 .then(res => {
                                     if(res.status === 'success') {
-                                        localStorage.removeItem('cart'); // Limpiamos el carrito local
-                                        // REDIRECCIÓN A LA PÁGINA DE GRACIAS PASANDO EL ID DEL PEDIDO
+                                        localStorage.removeItem('cart'); 
                                         window.location.href = 'gracias.php?id=' + res.pedido_id; 
                                     } else {
                                         alert("Error: " + res.message);
@@ -116,6 +124,7 @@ require_once 'api/conexion.php';
     <style>
         .glass { backdrop-filter: blur(14px); background: rgba(255, 255, 255, 0.8); border: 1px solid rgba(30, 58, 138, 0.1); }
         .dark .glass { background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255, 255, 255, 0.1); }
+        [x-cloak] { display: none !important; }
     </style>
 </head>
 <body class="min-h-screen transition-colors duration-500 bg-slate-50 dark:bg-gray-900 text-gray-900 dark:text-white font-sans">
@@ -126,7 +135,7 @@ require_once 'api/conexion.php';
                 <i data-lucide="arrow-left" class="w-5 h-5"></i> Volver a la tienda
             </a>
             <img :src="darkMode ? 'imagenes/designWhite.png' : 'imagenes/Perpetua_Life.png'" 
-     class="h-10 w-auto object-contain transition-all duration-500">
+                 class="h-10 w-auto object-contain transition-all duration-500">
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -143,14 +152,22 @@ require_once 'api/conexion.php';
                             <input type="text" x-model="cliente.nombre" placeholder="Ej. Gustavo Cruz" 
                                    class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
                         </div>
+
                         <div class="space-y-2">
+                            <label class="text-xs font-bold uppercase text-gray-400 ml-2">Teléfono</label>
+                            <input type="tel" x-model="cliente.telefono" placeholder="Ej. 5512345678" maxlength="15"
+                                   class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
+                        </div>
+
+                        <div class="md:col-span-2 space-y-2">
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2">Correo Electrónico</label>
                             <input type="email" x-model="cliente.email" placeholder="ejemplo@correo.com" 
                                    class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
                         </div>
+
                         <div class="md:col-span-2 space-y-2">
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2">Dirección de Entrega</label>
-                            <textarea x-model="cliente.direccion" placeholder="Calle, número, colonia y ciudad..." rows="3"
+                            <textarea x-model="cliente.direccion" placeholder="Calle, número, colonia, ciudad y CP..." rows="3"
                                       class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all"></textarea>
                         </div>
                     </div>
@@ -175,7 +192,7 @@ require_once 'api/conexion.php';
                     <div class="space-y-4 max-h-[40vh] overflow-y-auto pr-2 mb-6">
                         <template x-for="item in cart" :key="item.id">
                             <div class="flex items-center gap-3">
-                                <img :src="item.img" class="w-12 h-12 rounded-xl object-contain bg-white p-1 border">
+                                <img :src="procesarImagen(item.img)" class="w-12 h-12 rounded-xl object-contain bg-white p-1 border">
                                 <div class="flex-1">
                                     <p class="text-xs font-bold uppercase truncate w-32" x-text="item.nombre"></p>
                                     <p class="text-[10px] text-gray-400" x-text="item.qty + ' unidad(es)'"></p>
