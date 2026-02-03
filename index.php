@@ -46,7 +46,7 @@ if ($resultado && $resultado->num_rows > 0) {
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://www.paypal.com/sdk/js?client-id=test&currency=USD"></script>
+    <script src="https://www.paypal.com/sdk/js?client-id=test&currency=MXN"></script>
     
     <script>
         tailwind.config = {
@@ -55,8 +55,9 @@ if ($resultado && $resultado->num_rows > 0) {
                 extend: {
                     colors: {
                         'perpetua-blue': '#1e3a8a',
-                        'perpetua-aqua': '#22d3ee',
+                        'perpetua-aqua': '#4EA72E',
                         'perpetua-orange': '#FF9900',
+                        'escala-green': '#00524A',
                     }
                 }
             }
@@ -182,23 +183,46 @@ if ($resultado && $resultado->num_rows > 0) {
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
     <style>
-        [x-cloak] { display: none !important; }
-        .btn-gradient { background: linear-gradient(135deg, #1e3a8a 0%, #22d3ee 100%); transition: all 0.3s ease; }
-        .btn-gradient:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(34, 211, 238, 0.4); }
-        .glass { backdrop-blur: 14px; background: rgba(255, 255, 255, 0.85); border: 1px solid rgba(30, 58, 138, 0.1); }
-        .dark .glass { background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255, 255, 255, 0.1); }
-        
-        /* Animación Scanner */
-        @keyframes scan { 0% { top: 0%; opacity: 0; } 50% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
-        .scanner-line { height: 4px; background: #22d3ee; box-shadow: 0 0 20px #22d3ee; position: absolute; width: 100%; z-index: 40; animation: scan 2s linear infinite; }
-        .grid-overlay { background-image: linear-gradient(rgba(34, 211, 238, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(34, 211, 238, 0.1) 1px, transparent 1px); background-size: 20px 20px; }
-        
-        /* Badges */
-        .sale-badge { background-color: #FF9900; color: white; font-weight: 800; padding: 5px 12px; clip-path: polygon(0 0, 100% 0, 90% 50%, 100% 100%, 0 100%); z-index: 40; }
-        .last-units-badge { background-color: #EF4444; color: white; font-weight: 800; padding: 5px 12px; clip-path: polygon(0 0, 100% 0, 90% 50%, 100% 100%, 0 100%); z-index: 40; }
-        .top-badge { background: linear-gradient(to right, #1e3a8a, #22d3ee); color: white; font-weight: 800; padding: 5px 12px; clip-path: polygon(0 0, 90% 0, 100% 50%, 90% 100%, 0 100%); z-index: 40; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-    </style>
+    [x-cloak] { display: none !important; }
+
+    /* CAMBIO REALIZADO: Degradado eliminado, ahora es color sólido #00524A */
+    .btn-gradient { 
+        background-color: #00524A; 
+        color: white;
+        transition: all 0.3s ease; 
+    }
+    
+    /* Ajusté también la sombra al hacer hover para que combine con el verde */
+    .btn-gradient:hover { 
+        transform: translateY(-2px); 
+        box-shadow: 0 10px 15px -3px rgba(0, 82, 74, 0.4); 
+    }
+
+    .glass { backdrop-blur: 14px; background: rgba(255, 255, 255, 0.85); border: 1px solid rgba(30, 58, 138, 0.1); }
+    .dark .glass { background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255, 255, 255, 0.1); }
+    
+    /* Animación Scanner */
+    @keyframes scan { 0% { top: 0%; opacity: 0; } 50% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+    .scanner-line { height: 4px; background: #22d3ee; box-shadow: 0 0 20px #22d3ee; position: absolute; width: 100%; z-index: 40; animation: scan 2s linear infinite; }
+    .grid-overlay { background-image: linear-gradient(rgba(34, 211, 238, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(34, 211, 238, 0.1) 1px, transparent 1px); background-size: 20px 20px; }
+    
+    /* Badges */
+    .sale-badge { background-color: #FF9900; color: white; font-weight: 800; padding: 5px 12px; clip-path: polygon(0 0, 100% 0, 90% 50%, 100% 100%, 0 100%); z-index: 40; }
+    .last-units-badge { background-color: #EF4444; color: white; font-weight: 800; padding: 5px 12px; clip-path: polygon(0 0, 100% 0, 90% 50%, 100% 100%, 0 100%); z-index: 40; }
+    
+    /* CAMBIO REALIZADO: Degradado de escala-green a perpetua-aqua */
+    .top-badge { 
+        /* Usamos 'background' en lugar de 'background-color' para permitir degradados */
+        background: linear-gradient(to right, #00524A, #4EA72E); 
+        color: white; 
+        font-weight: 800; 
+        padding: 5px 12px; 
+        clip-path: polygon(0 0, 90% 0, 100% 50%, 90% 100%, 0 100%); 
+        z-index: 40; 
+    }
+    
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+</style>
 </head>
 
 <body class="min-h-screen transition-all duration-500 flex flex-col" :class="darkMode ? 'bg-gray-900 text-white' : 'bg-slate-50 text-gray-900'">
@@ -208,11 +232,11 @@ if ($resultado && $resultado->num_rows > 0) {
         <p class="text-sm font-bold" x-text="t[lang].added"></p>
     </div>
 
-    <header class="sticky top-0 z-40 glass border-b border-perpetua-blue/10">
+    <header class="sticky top-0 z-40 glass border-b border-escala-green/10">
         <div class="max-w-7xl mx-auto px-4 py-2 flex flex-col md:flex-row items-center justify-between gap-4">
             <div class="flex items-center">
-                <img src="imagenes/Perpetua.png" class="block md:hidden w-20 h-auto object-contain">
-                <img :src="darkMode ? 'imagenes/designWhite.png' : 'imagenes/Perpetua_Life.png'" 
+                <img src="imagenes/EscalaBoutique.png" class="block md:hidden w-20 h-auto object-contain">
+                <img :src="darkMode ? 'imagenes/designWhite.png' : 'imagenes/EscalaBoutiqueCompleto.png'" 
                      class="hidden md:block w-72 h-auto md:w-[450px] object-contain transition-all duration-500">
             </div>
 
@@ -223,10 +247,10 @@ if ($resultado && $resultado->num_rows > 0) {
             </div>
 
             <div class="flex items-center gap-3">
-                <button @click="switchLang()" class="px-3 py-1 rounded-full text-[10px] font-bold border-2 border-perpetua-blue text-perpetua-blue dark:text-perpetua-aqua transition-all">
+                <button @click="switchLang()" class="px-3 py-1 rounded-full text-[10px] font-bold border-2 border-escala-green text-escala-green dark:text-perpetua-aqua transition-all">
                     <span x-text="t[lang].langBtn"></span>
                 </button>
-                <button @click="toggleDarkMode()" class="p-2 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/40 text-perpetua-blue dark:text-perpetua-aqua">
+                <button @click="toggleDarkMode()" class="p-2 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/40 text-escala-green dark:text-perpetua-aqua">
                     <i data-lucide="sun" x-show="darkMode"></i>
                     <i data-lucide="moon" x-show="!darkMode"></i>
                 </button>
@@ -267,8 +291,8 @@ if ($resultado && $resultado->num_rows > 0) {
                     </template>
                     <template x-if="imgs.length > 1">
                         <div class="absolute inset-0 flex items-center justify-between px-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                            <button @click="activeImg = (activeImg === 0) ? imgs.length - 1 : activeImg - 1" class="p-1 glass rounded-full text-blue-600 shadow-md"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
-                            <button @click="activeImg = (activeImg === imgs.length - 1) ? 0 : activeImg + 1" class="p-1 glass rounded-full text-blue-600 shadow-md"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+                            <button @click="activeImg = (activeImg === 0) ? imgs.length - 1 : activeImg - 1" class="p-1 glass rounded-full text-escala-green shadow-md"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                            <button @click="activeImg = (activeImg === imgs.length - 1) ? 0 : activeImg + 1" class="p-1 glass rounded-full text-escala-green shadow-md"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
                         </div>
                     </template>
                 </div>
@@ -282,26 +306,26 @@ if ($resultado && $resultado->num_rows > 0) {
                     </div>
 
                     <p class="text-[10px] font-bold text-gray-400 mb-4 uppercase">
-                        <span x-text="t[lang].stock"></span> : <span class="text-perpetua-blue dark:text-perpetua-aqua font-black"><?php echo $p['stock']; ?></span>
+                        <span x-text="t[lang].stock"></span> : <span class="text-escala-green dark:text-perpetua-aqua font-black"><?php echo $p['stock']; ?></span>
                     </p>
                     
                     <div class="flex items-center gap-2 mb-5">
                         <div class="flex items-center bg-gray-100 dark:bg-gray-100 rounded-full p-1 shadow-inner border border-gray-200">
-                            <button @click="if(selectedQty > 1) selectedQty--" class="w-8 h-8 flex items-center justify-center bg-transparent text-blue-600 active:scale-90 transition-all"><i data-lucide="minus" class="w-4 h-4"></i></button>
+                            <button @click="if(selectedQty > 1) selectedQty--" class="w-8 h-8 flex items-center justify-center bg-transparent text-escala-green active:scale-90 transition-all"><i data-lucide="minus" class="w-4 h-4"></i></button>
                             <span class="text-sm font-black w-10 text-center text-gray-900" x-text="selectedQty"></span>
-                            <button @click="if(selectedQty < <?php echo $p['stock']; ?>) selectedQty++; else alert(t[lang].noStock)" class="w-8 h-8 flex items-center justify-center bg-transparent text-blue-600 active:scale-90 transition-all"><i data-lucide="plus" class="w-4 h-4"></i></button>
+                            <button @click="if(selectedQty < <?php echo $p['stock']; ?>) selectedQty++; else alert(t[lang].noStock)" class="w-8 h-8 flex items-center justify-center bg-transparent text-escala-green active:scale-90 transition-all"><i data-lucide="plus" class="w-4 h-4"></i></button>
                         </div>
                         <span class="text-[9px] font-bold text-gray-400 uppercase" x-text="t[lang].qty"></span>
                     </div>
 
                     <div class="mt-auto pt-4 border-t dark:border-gray-700 flex flex-col gap-2">
-                        <span class="text-2xl font-black text-perpetua-blue dark:text-perpetua-aqua">$<?php echo number_format($p['precio'], 2); ?></span>
+                        <span class="text-2xl font-black text-escala-green dark:text-perpetua-aqua">$<?php echo number_format($p['precio'], 2); ?></span>
                         <button @click="addToCart(<?php echo htmlspecialchars(json_encode($p), ENT_QUOTES, 'UTF-8'); ?>, selectedQty); selectedQty = 1" 
                                 class="btn-gradient text-white w-full py-3.5 rounded-xl font-black uppercase shadow-lg text-xs flex items-center justify-center gap-2">
                             <i data-lucide="shopping-cart" class="w-4 h-4"></i><span x-text="t[lang].add"></span>
                         </button>
                         <button @click="openModal(<?php echo htmlspecialchars(json_encode($p), ENT_QUOTES, 'UTF-8'); ?>)" 
-                                class="btn-ghost w-full py-2.5 rounded-xl font-bold uppercase text-[10px] flex items-center justify-center gap-2 opacity-80 hover:opacity-100 border-2 border-perpetua-blue text-perpetua-blue dark:border-perpetua-aqua dark:text-perpetua-aqua">
+                                class="btn-ghost w-full py-2.5 rounded-xl font-bold uppercase text-[10px] flex items-center justify-center gap-2 opacity-80 hover:opacity-100 border-2 border-escala-green text-escala-green dark:border-perpetua-aqua dark:text-perpetua-aqua">
                             <i data-lucide="info" class="w-3.5 h-3.5"></i><span x-text="t[lang].info"></span>
                         </button>
                     </div>
@@ -319,9 +343,9 @@ if ($resultado && $resultado->num_rows > 0) {
             </template>
         </button>
         
-        <div x-show="cartOpen" @click.away="!isPaying && (cartOpen = false)" x-transition class="absolute bottom-20 right-0 w-80 md:w-96 rounded-3xl shadow-2xl glass border-2 border-perpetua-blue/20 overflow-hidden min-h-[200px]">
+        <div x-show="cartOpen" @click.away="!isPaying && (cartOpen = false)" x-transition class="absolute bottom-20 right-0 w-80 md:w-96 rounded-3xl shadow-2xl glass border-2 border-escala-green/20 overflow-hidden min-h-[200px]">
             <div x-show="!isPaying && !showSuccess">
-                <div class="p-4 bg-perpetua-blue text-white flex justify-between items-center font-bold uppercase text-sm">
+                <div class="p-4 bg-escala-green text-white flex justify-between items-center font-bold uppercase text-sm">
                     <span x-text="t[lang].cart"></span>
                     <button @click="cartOpen = false" class="hover:rotate-180 transition-transform duration-500 p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
                 </div>
@@ -334,16 +358,20 @@ if ($resultado && $resultado->num_rows > 0) {
                                 <div class="text-perpetua-aqua" x-text="'$' + parseFloat(item.precio * item.qty).toFixed(2)"></div>
                             </div>
                             <div class="flex items-center gap-1 bg-blue-50 dark:bg-gray-800 rounded-lg p-1 border">
-                                <button @click="updateQty(item.id, -1)" class="p-1 text-blue-600 bg-transparent transition-all active:scale-75"><i data-lucide="minus" class="w-3 h-3"></i></button>
+                                <button @click="updateQty(item.id, -1)" class="p-1 text-escala-green bg-transparent transition-all active:scale-75"><i data-lucide="minus" class="w-3 h-3"></i></button>
                                 <span class="w-4 text-center dark:text-white" x-text="item.qty"></span>
-                                <button @click="updateQty(item.id, 1)" class="p-1 text-blue-600 bg-transparent transition-all active:scale-75"><i data-lucide="plus" class="w-3 h-3"></i></button>
+                                <button @click="updateQty(item.id, 1)" class="p-1 text-escala-green bg-transparent transition-all active:scale-75"><i data-lucide="plus" class="w-3 h-3"></i></button>
                             </div>
                         </div>
                     </template>
                 </div>
                 <div class="p-4 bg-gray-50 dark:bg-gray-900 border-t dark:border-gray-700" x-show="cart.length > 0">
                     <div class="flex justify-between font-bold mb-4 dark:text-white uppercase"><span x-text="t[lang].total"></span><span class="text-perpetua-aqua" x-text="'$' + totalPrice()"></span></div>
-                    <button @click="initPayPal()" class="w-full btn-gradient text-white py-3 rounded-2xl font-bold uppercase tracking-widest shadow-lg transition-all" x-text="t[lang].pay"></button>
+                    <!-- <button @click="initPayPal()" class="w-full btn-gradient text-white py-3 rounded-2xl font-bold uppercase tracking-widest shadow-lg transition-all" x-text="t[lang].pay"></button> -->
+                    <button @click="window.location.href = 'completarCompra.php'" 
+                            class="w-full btn-gradient text-white py-3 rounded-2xl font-bold uppercase tracking-widest shadow-lg transition-all" 
+                            x-text="t[lang].pay">
+                    </button>
                 </div>
             </div>
 
@@ -363,7 +391,7 @@ if ($resultado && $resultado->num_rows > 0) {
 
             <div x-show="showSuccess" x-cloak class="p-12 flex flex-col items-center gap-4 text-center">
                 <i data-lucide="party-popper" class="w-16 h-16 text-perpetua-orange animate-bounce"></i>
-                <h2 class="text-2xl font-black text-perpetua-blue dark:text-perpetua-aqua uppercase" x-text="t[lang].success"></h2>
+                <h2 class="text-2xl font-black text-escala-green dark:text-perpetua-aqua uppercase" x-text="t[lang].success"></h2>
             </div>
         </div>
     </div>
@@ -372,13 +400,13 @@ if ($resultado && $resultado->num_rows > 0) {
         <div class="fixed inset-0 z-[60] flex items-center justify-center p-4" x-cloak>
             <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="selectedProduct = null"></div>
             <div class="relative w-full max-w-xl rounded-[2.5rem] glass overflow-hidden shadow-2xl transition-all" x-data="{ activeImgModal: 0, selectedQtyModal: 1 }">
-                <div class="p-5 bg-perpetua-blue text-white flex justify-between items-center font-bold uppercase text-sm">
+                <div class="p-5 bg-escala-green text-white flex justify-between items-center font-bold uppercase text-sm">
                     <span x-text="selectedProduct.nombre"></span>
                     <button @click="selectedProduct = null" class="hover:rotate-180 transition-transform duration-500 p-1"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
                 <div class="p-8">
                     <div class="relative w-full h-64 bg-white rounded-3xl mb-6 flex items-center justify-center p-4 border overflow-hidden">
-                        <div x-show="isScanning" class="absolute inset-0 z-50 flex items-center justify-center bg-perpetua-blue/20 backdrop-blur-sm">
+                        <div x-show="isScanning" class="absolute inset-0 z-50 flex items-center justify-center bg-escala-green/20 backdrop-blur-sm">
                             <div class="scanner-line"></div>
                             <div class="grid-overlay absolute inset-0"></div>
                         </div>
@@ -386,8 +414,8 @@ if ($resultado && $resultado->num_rows > 0) {
                         <img :src="selectedProduct.imagenes[activeImgModal]" class="max-h-full object-contain transition-all duration-500">
                         <template x-if="selectedProduct.imagenes.length > 1">
                             <div class="absolute inset-0 flex items-center justify-between px-3 z-30">
-                                <button @click="activeImgModal = (activeImgModal === 0) ? selectedProduct.imagenes.length - 1 : activeImgModal - 1" class="p-2 glass rounded-full text-blue-600 shadow-lg active:scale-90"><i data-lucide="chevron-left" class="w-5 h-5"></i></button>
-                                <button @click="activeImgModal = (activeImgModal === selectedProduct.imagenes.length - 1) ? 0 : activeImgModal + 1" class="p-2 glass rounded-full text-blue-600 shadow-lg active:scale-90"><i data-lucide="chevron-right" class="w-5 h-5"></i></button>
+                                <button @click="activeImgModal = (activeImgModal === 0) ? selectedProduct.imagenes.length - 1 : activeImgModal - 1" class="p-2 glass rounded-full text-escala-green shadow-lg active:scale-90"><i data-lucide="chevron-left" class="w-5 h-5"></i></button>
+                                <button @click="activeImgModal = (activeImgModal === selectedProduct.imagenes.length - 1) ? 0 : activeImgModal + 1" class="p-2 glass rounded-full text-escala-green shadow-lg active:scale-90"><i data-lucide="chevron-right" class="w-5 h-5"></i></button>
                             </div>
                         </template>
                     </div>
@@ -397,13 +425,13 @@ if ($resultado && $resultado->num_rows > 0) {
                     <div class="flex flex-wrap justify-between items-center p-4 rounded-2xl mb-6 bg-gray-100 dark:bg-gray-800 border dark:border-gray-600 gap-4">
                         <div>
                             <span class="text-[10px] font-bold text-gray-400 block mb-1 uppercase" x-text="t[lang].price"></span>
-                            <span class="text-2xl font-black text-blue-600 dark:text-perpetua-aqua" x-text="'$' + selectedProduct.precio.toFixed(2)"></span>
+                            <span class="text-2xl font-black text-escala-green dark:text-perpetua-aqua" x-text="'$' + selectedProduct.precio.toFixed(2)"></span>
                         </div>
                         <div class="flex items-center gap-2">
                             <div class="flex items-center bg-gray-100 dark:bg-gray-100 rounded-full p-1 border shadow-inner border-gray-200">
-                                <button @click="if(selectedQtyModal > 1) selectedQtyModal--" class="w-8 h-8 flex items-center justify-center bg-transparent text-blue-600 transition-all"><i data-lucide="minus" class="w-4 h-4"></i></button>
+                                <button @click="if(selectedQtyModal > 1) selectedQtyModal--" class="w-8 h-8 flex items-center justify-center bg-transparent text-escala-green transition-all"><i data-lucide="minus" class="w-4 h-4"></i></button>
                                 <span class="text-lg font-black w-10 text-center text-gray-900" x-text="selectedQtyModal"></span>
-                                <button @click="if(selectedQtyModal < selectedProduct.stock) selectedQtyModal++; else alert(t[lang].noStock)" class="w-8 h-8 flex items-center justify-center bg-transparent text-blue-600 transition-all"><i data-lucide="plus" class="w-4 h-4"></i></button>
+                                <button @click="if(selectedQtyModal < selectedProduct.stock) selectedQtyModal++; else alert(t[lang].noStock)" class="w-8 h-8 flex items-center justify-center bg-transparent text-escala-green transition-all"><i data-lucide="plus" class="w-4 h-4"></i></button>
                             </div>
                         </div>
                     </div>
@@ -415,7 +443,7 @@ if ($resultado && $resultado->num_rows > 0) {
         </div>
     </template>
 
-    <footer class="py-12 border-t border-perpetua-blue/10 flex flex-col items-center justify-center bg-white dark:bg-gray-900 transition-colors">
+    <footer class="py-12 border-t border-escala-green/10 flex flex-col items-center justify-center bg-white dark:bg-gray-900 transition-colors">
         <span class="text-[10px] font-medium tracking-[0.4em] text-gray-400 mb-6 uppercase" x-text="t[lang].powered"></span>
         <img src="imagenes/KAI_NA.png" alt="KAI" class="h-10 object-contain dark:invert opacity-80">
     </footer>

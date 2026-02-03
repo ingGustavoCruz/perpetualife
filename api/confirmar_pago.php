@@ -1,57 +1,52 @@
 <?php
-/**
- * API DE ALTA SEGURIDAD PARA CONFIRMACIÓN DE PEDIDOS
- */
 header('Content-Type: application/json');
 require_once 'conexion.php';
 
-// 1. Recibir los datos del frontend
 $json = file_get_contents('php://input');
 $datos = json_decode($json, true);
 
-if (!$datos) {
-    echo json_encode(['status' => 'error', 'message' => 'Sin datos válidos']);
+if (!$datos || !isset($datos['cliente'])) {
+    echo json_encode(['status' => 'error', 'message' => 'Datos incompletos']);
     exit;
 }
 
 $orderID = $datos['orderID'];
-$cart = $datos['cart'];
-$total = $datos['total'];
+$cart    = $datos['cart'];
+$total   = $datos['total'];
+$c       = $datos['cliente']; // Datos del formulario
 
-// Iniciar transacción SQL para asegurar que si algo falla, no se guarde nada a medias
 $conn->begin_transaction();
 
 try {
-    // 2. Insertar en la tabla pedidos (Uso de ruta absoluta para seguridad)
-    $stmt = $conn->prepare("INSERT INTO kaiexper_perpetualife.pedidos (paypal_order_id, total, moneda, estado) VALUES (?, ?, 'USD', 'COMPLETADO')");
-    $stmt->bind_param("sd", $orderID, $total);
-    $stmt->execute();
+    // 1. Insertar o identificar al cliente
+    // Usamos el email como identificador para no duplicar clientes
+    $stmt_c = $conn->prepare("INSERT INTO kaiexper_perpetualife.clientes (nombre, email, direccion) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), direccion=VALUES(direccion)");
+    $stmt_c->bind_param("sss", $c['nombre'], $c['email'], $c['direccion']);
+    $stmt_c->execute();
+    $cliente_id = $conn->insert_id;
+
+    // 2. Insertar el pedido vinculado al cliente
+    $stmt_p = $conn->prepare("INSERT INTO kaiexper_perpetualife.pedidos (cliente_id, paypal_order_id, total, moneda, estado) VALUES (?, ?, ?, 'MXN', 'COMPLETADO')");
+    $stmt_p->bind_param("isd", $cliente_id, $orderID, $total);
+    $stmt_p->execute();
     $pedido_id = $conn->insert_id;
 
-    // 3. Insertar detalles y actualizar stock
+    // 3. Detalles y Stock (Tu lógica original optimizada)
     $stmt_detalle = $conn->prepare("INSERT INTO kaiexper_perpetualife.detalles_pedido (pedido_id, producto_id, cantidad, precio_unitario) VALUES (?, ?, ?, ?)");
     $stmt_stock = $conn->prepare("UPDATE kaiexper_perpetualife.productos SET stock = stock - ? WHERE id = ?");
 
     foreach ($cart as $item) {
-        $p_id = $item['id'];
-        $qty = $item['qty'];
-        $price = $item['precio'];
-
-        // Guardar detalle
-        $stmt_detalle->bind_param("iiid", $pedido_id, $p_id, $qty, $price);
+        $stmt_detalle->bind_param("iiid", $pedido_id, $item['id'], $item['qty'], $item['precio']);
         $stmt_detalle->execute();
 
-        // Descontar stock
-        $stmt_stock->bind_param("ii", $qty, $p_id);
+        $stmt_stock->bind_param("ii", $item['qty'], $item['id']);
         $stmt_stock->execute();
     }
 
-    // Si todo salió bien, confirmar cambios
     $conn->commit();
     echo json_encode(['status' => 'success', 'pedido_id' => $pedido_id]);
 
 } catch (Exception $e) {
-    // Si algo falla, deshacer todo (Rollback)
     $conn->rollback();
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }
