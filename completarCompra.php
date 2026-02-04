@@ -1,7 +1,7 @@
 <?php
 /**
  * completarCompra.php - Perpetualife
- * Flujo de Checkout con Teléfono y corrección de imágenes
+ * Checkout Bilingüe (ES/EN) + Login Modal + PayPal
  */
 require_once 'api/conexion.php'; 
 ?>
@@ -11,7 +11,6 @@ require_once 'api/conexion.php';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Finalizar Compra | Perpetualife</title>
-    
     <link rel="icon" type="image/png" href="imagenes/KAI_NG.png">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -34,19 +33,90 @@ require_once 'api/conexion.php';
         function checkoutData() {
             return {
                 darkMode: localStorage.getItem('darkMode') === 'true',
+                lang: localStorage.getItem('lang') || 'es', // Cargar idioma
                 cart: JSON.parse(localStorage.getItem('cart')) || [],
-                cliente: {
-                    nombre: '',
-                    email: '',
-                    telefono: '', // CAMPO REQUERIDO
-                    direccion: ''
-                },
+                
+                cliente: { nombre: '', email: '', telefono: '', direccion: '' },
+                
+                // Login Variables
+                showLoginModal: false,
+                loginView: 'login',
+                loginData: { email: '', password: '' },
+                loginError: '',
+                recEmail: '',
+                recMsg: '',
+                
+                // Registro Variables
+                crearCuenta: false,
+                newAccount: { password: '', confirm: '' },
+
                 isProcessing: false,
 
+                // TRADUCCIONES CHECKOUT
+                t: {
+                    es: {
+                        back: 'Volver a la tienda',
+                        // Banner Login
+                        clientQuestion: '¿Ya eres cliente?', 
+                        clientDesc: 'Inicia sesión para cargar tus datos automáticamente.',
+                        loginBtn: 'Iniciar Sesión',
+                        // Modal Login
+                        welcome: 'Bienvenido', email: 'Correo Electrónico', pass: 'Contraseña',
+                        forgot: '¿Olvidaste tu contraseña?', loginAction: 'Acceder y Cargar Datos',
+                        recoverTitle: 'Recuperar Cuenta', recoverDesc: 'Ingresa tu correo para restablecer tu contraseña.',
+                        yourEmail: 'Tu Correo Registrado', sendLink: 'Enviar Enlace', cancel: 'Cancelar y Volver',
+                        // Formulario Envío
+                        shippingTitle: 'Datos de Envío',
+                        name: 'Nombre Completo', phone: 'Teléfono', address: 'Dirección de Entrega',
+                        createAccount: 'Crear una cuenta para futuras compras',
+                        confirmPass: 'Confirmar Contraseña',
+                        passMismatch: 'Las contraseñas no coinciden',
+                        // Resumen y Pago
+                        paymentTitle: 'Método de Pago',
+                        securePayment: 'Pago 100% Seguro Encriptado por PayPal',
+                        yourOrder: 'Tu Pedido',
+                        units: 'unidad(es)',
+                        subtotal: 'Subtotal', shipping: 'Envío', free: 'Gratis', total: 'Total',
+                        processing: 'Procesando tu pedido...', wait: 'No cierres esta ventana',
+                        langBtn: 'English',
+                        alertEmpty: 'Tu carrito está vacío',
+                        alertData: 'Por favor, completa todos los datos obligatorios.',
+                        welcomeUser: '¡Bienvenido! Tus datos se han cargado.'
+                    },
+                    en: {
+                        back: 'Back to store',
+                        // Banner Login
+                        clientQuestion: 'Already a customer?', 
+                        clientDesc: 'Login to load your data automatically.',
+                        loginBtn: 'Login',
+                        // Modal Login
+                        welcome: 'Welcome Back', email: 'Email Address', pass: 'Password',
+                        forgot: 'Forgot password?', loginAction: 'Login & Load Data',
+                        recoverTitle: 'Recover Account', recoverDesc: 'Enter your email to receive a reset link.',
+                        yourEmail: 'Your Registered Email', sendLink: 'Send Link', cancel: 'Cancel',
+                        // Formulario Envío
+                        shippingTitle: 'Shipping Details',
+                        name: 'Full Name', phone: 'Phone Number', address: 'Shipping Address',
+                        createAccount: 'Create an account for future purchases',
+                        confirmPass: 'Confirm Password',
+                        passMismatch: 'Passwords do not match',
+                        // Resumen y Pago
+                        paymentTitle: 'Payment Method',
+                        securePayment: '100% Secure Payment Encrypted by PayPal',
+                        yourOrder: 'Your Order',
+                        units: 'unit(s)',
+                        subtotal: 'Subtotal', shipping: 'Shipping', free: 'Free', total: 'Total',
+                        processing: 'Processing your order...', wait: 'Do not close this window',
+                        langBtn: 'Español',
+                        alertEmpty: 'Your cart is empty',
+                        alertData: 'Please complete all required fields.',
+                        welcomeUser: 'Welcome! Your data has been loaded.'
+                    }
+                },
+
                 init() {
-                    // Validar si hay carrito
                     if (this.cart.length === 0) {
-                        alert("Tu carrito está vacío");
+                        alert(this.t[this.lang].alertEmpty);
                         window.location.href = 'index.php';
                         return;
                     }
@@ -54,78 +124,106 @@ require_once 'api/conexion.php';
                     this.renderPayPal();
                 },
 
-                // Lógica de Corrección de Imágenes
+                switchLang() { 
+                    this.lang = (this.lang === 'es' ? 'en' : 'es'); 
+                    localStorage.setItem('lang', this.lang); 
+                },
+
+                loginCliente() {
+                    this.loginError = '';
+                    fetch('api/login_checkout.php', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(this.loginData)
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data.success) {
+                            this.cliente.nombre = data.datos.nombre;
+                            this.cliente.telefono = data.datos.telefono;
+                            this.cliente.direccion = data.datos.direccion;
+                            this.cliente.email = this.loginData.email; 
+                            this.showLoginModal = false;
+                            alert(this.t[this.lang].welcomeUser);
+                        } else {
+                            this.loginError = data.message;
+                        }
+                    })
+                    .catch(err => { this.loginError = "Connection Error"; });
+                },
+
+                recoverPassword() {
+                    this.recMsg = '';
+                    if(!this.recEmail.includes('@')) { this.recMsg = 'Invalid Email'; return; }
+                    fetch('api/solicitar_reset.php', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ email: this.recEmail })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        this.recMsg = data.message;
+                        if(data.debug_link) alert("DEV LINK: " + data.debug_link);
+                    })
+                    .catch(err => { this.recMsg = "Error sending request"; });
+                },
+
                 procesarImagen(img) {
                     if (!img) return 'https://via.placeholder.com/150';
-                    // Si ya es una URL completa (http/https), la dejamos igual
                     if (img.includes('http')) return img;
-                    // Si ya tiene el prefijo, lo dejamos igual
                     if (img.includes('imgProd/')) return img;
-                    // Si no, le agregamos el prefijo
                     return 'imgProd/' + img;
                 },
 
-                totalPrice() {
-                    return this.cart.reduce((s, i) => s + (i.precio * i.qty), 0).toFixed(2);
-                },
+                totalPrice() { return this.cart.reduce((s, i) => s + (i.precio * i.qty), 0).toFixed(2); },
 
                 formValido() {
-                    return this.cliente.nombre.length > 2 && 
-                           this.cliente.email.includes('@') && 
-                           this.cliente.telefono.length >= 10 && // Validación teléfono (min 10 dígitos)
-                           this.cliente.direccion.length > 5;
+                    let basicos = this.cliente.nombre.length > 2 && this.cliente.email.includes('@') && 
+                                  this.cliente.telefono.length >= 10 && this.cliente.direccion.length > 5;
+                    let registro = true;
+                    if (this.crearCuenta) {
+                        registro = this.newAccount.password.length >= 6 && (this.newAccount.password === this.newAccount.confirm);
+                    }
+                    return basicos && registro;
                 },
 
                 renderPayPal() {
                     paypal.Buttons({
                         style: { layout: 'vertical', color: 'blue', shape: 'pill', label: 'pay' },
-                        
-                        // Validación antes de abrir PayPal
                         onClick: (data, actions) => {
                             if (!this.formValido()) {
-                                alert("Por favor, completa todos los datos de envío (incluyendo un teléfono válido de 10 dígitos) antes de proceder.");
+                                alert(this.t[this.lang].alertData);
                                 return actions.reject();
                             }
                         },
-
                         createOrder: (data, actions) => {
-                            return actions.order.create({
-                                purchase_units: [{
-                                    description: "Compra en Perpetualife",
-                                    amount: { value: this.totalPrice() }
-                                }]
-                            });
+                            return actions.order.create({ purchase_units: [{ amount: { value: this.totalPrice() } }] });
                         },
-
                         onApprove: (data, actions) => {
                             this.isProcessing = true;
                             return actions.order.capture().then((details) => {
-                                // Enviar datos al backend
+                                let payload = {
+                                    orderID: data.orderID,
+                                    payerID: details.payer.payer_id,
+                                    cart: this.cart,
+                                    total: this.totalPrice(),
+                                    cliente: this.cliente,
+                                    crear_cuenta: this.crearCuenta,
+                                    new_password: this.newAccount.password
+                                };
                                 return fetch('api/confirmar_pago.php', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                        orderID: data.orderID,
-                                        payerID: details.payer.payer_id,
-                                        cart: this.cart,
-                                        total: this.totalPrice(),
-                                        cliente: this.cliente // Incluye el teléfono
-                                    })
+                                    body: JSON.stringify(payload)
                                 })
                                 .then(res => res.json())
                                 .then(res => {
                                     if(res.status === 'success') {
                                         localStorage.removeItem('cart'); 
                                         window.location.href = 'gracias.php?id=' + res.pedido_id; 
-                                    } else {
-                                        throw new Error(res.message || "Error desconocido");
-                                    }
+                                    } else { throw new Error(res.message); }
                                 })
-                                .catch(err => {
-                                    console.error(err);
-                                    alert("Hubo un error al registrar tu pedido: " + err.message);
-                                    this.isProcessing = false;
-                                });
+                                .catch(err => { alert("Error: " + err.message); this.isProcessing = false; });
                             });
                         }
                     }).render('#paypal-button-container');
@@ -138,96 +236,178 @@ require_once 'api/conexion.php';
         .glass { backdrop-filter: blur(14px); background: rgba(255, 255, 255, 0.8); border: 1px solid rgba(30, 58, 138, 0.1); }
         .dark .glass { background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255, 255, 255, 0.1); }
         [x-cloak] { display: none !important; }
+        .btn-gradient { background: linear-gradient(135deg, #1e3a8a 0%, #22d3ee 100%); transition: all 0.3s ease; }
+        .btn-gradient:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(34, 211, 238, 0.4); }
     </style>
 </head>
 <body class="min-h-screen transition-colors duration-500 bg-slate-50 dark:bg-gray-900 text-gray-900 dark:text-white font-sans">
 
+    <div x-show="showLoginModal" x-cloak class="fixed inset-0 z-[200] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showLoginModal = false; loginView='login'"></div>
+        
+        <div x-show="showLoginModal" x-transition class="relative bg-white dark:bg-gray-800 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 dark:border-gray-700">
+            <button @click="showLoginModal = false; loginView='login'" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-6 h-6"></i></button>
+
+            <div x-show="loginView === 'login'">
+                <h3 class="text-2xl font-black text-center mb-6 uppercase text-perpetua-blue dark:text-perpetua-aqua" x-text="t[lang].welcome"></h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].email"></label>
+                        <input type="email" x-model="loginData.email" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].pass"></label>
+                        <input type="password" x-model="loginData.password" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
+                    </div>
+                    
+                    <div class="flex justify-end">
+                        <button @click="loginView = 'recover'" class="text-xs font-bold text-gray-400 hover:text-perpetua-aqua underline" x-text="t[lang].forgot"></button>
+                    </div>
+
+                    <p x-show="loginError" x-text="loginError" class="text-center text-xs text-red-500 font-bold"></p>
+
+                    <button @click="loginCliente()" class="w-full btn-gradient text-white py-3 rounded-xl font-bold uppercase tracking-widest shadow-lg" x-text="t[lang].loginAction"></button>
+                </div>
+            </div>
+
+            <div x-show="loginView === 'recover'">
+                <h3 class="text-xl font-black text-center mb-2 uppercase text-gray-700 dark:text-white" x-text="t[lang].recoverTitle"></h3>
+                <p class="text-xs text-center text-gray-400 mb-6" x-text="t[lang].recoverDesc"></p>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].yourEmail"></label>
+                        <input type="email" x-model="recEmail" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
+                    </div>
+
+                    <p x-show="recMsg" x-text="recMsg" class="text-center text-xs font-bold" :class="recMsg.includes('Error') || recMsg.includes('Invalid') ? 'text-red-500' : 'text-green-500'"></p>
+
+                    <button @click="recoverPassword()" class="w-full bg-slate-900 text-white py-3 rounded-xl font-bold uppercase tracking-widest hover:bg-perpetua-aqua transition" x-text="t[lang].sendLink"></button>
+                    
+                    <button @click="loginView = 'login'" class="w-full text-center text-xs font-bold text-gray-400 hover:text-gray-600 py-2" x-text="t[lang].cancel"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="max-w-6xl mx-auto px-4 py-10">
         <div class="flex justify-between items-center mb-10">
             <a href="index.php" class="flex items-center gap-2 text-perpetua-blue dark:text-perpetua-aqua font-bold hover:underline">
-                <i data-lucide="arrow-left" class="w-5 h-5"></i> Volver a la tienda
+                <i data-lucide="arrow-left" class="w-5 h-5"></i> <span x-text="t[lang].back"></span>
             </a>
-            <img :src="darkMode ? 'imagenes/designWhite.png' : 'imagenes/Perpetua_Life.png'" 
-                 class="h-10 w-auto object-contain transition-all duration-500" alt="Logo Perpetualife">
+            
+            <div class="flex items-center gap-4">
+                <button @click="switchLang()" class="px-3 py-1 rounded-full text-[10px] font-bold border-2 border-perpetua-blue text-perpetua-blue dark:text-perpetua-aqua transition-all">
+                    <span x-text="t[lang].langBtn"></span>
+                </button>
+                
+                <img :src="darkMode ? 'imagenes/designWhite.png' : 'imagenes/Perpetua_Life.png'" 
+                     class="h-10 w-auto object-contain transition-all duration-500" alt="Logo Perpetualife">
+            </div>
+        </div>
+
+        <div class="mb-8 rounded-2xl border border-gray-200 bg-white p-4 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-sm" x-show="!cliente.nombre">
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-perpetua-blue">
+                    <i data-lucide="user" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h4 class="font-bold text-gray-900 text-sm" x-text="t[lang].clientQuestion"></h4>
+                    <p class="text-xs text-gray-500" x-text="t[lang].clientDesc"></p>
+                </div>
+            </div>
+            <button @click="showLoginModal = true" class="bg-perpetua-blue hover:bg-blue-800 text-white font-bold py-2 px-6 rounded-lg text-xs transition-colors w-full sm:w-auto" x-text="t[lang].loginBtn"></button>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
             <div class="lg:col-span-2 space-y-6">
                 <div class="glass p-8 rounded-[2rem] shadow-xl border-t-4 border-perpetua-aqua">
                     <h2 class="text-2xl font-black mb-6 uppercase flex items-center gap-3">
-                        <i data-lucide="truck" class="text-perpetua-aqua"></i> Datos de Envío
+                        <i data-lucide="truck" class="text-perpetua-aqua"></i> <span x-text="t[lang].shippingTitle"></span>
                     </h2>
                     
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="space-y-2">
-                            <label class="text-xs font-bold uppercase text-gray-400 ml-2">Nombre Completo</label>
+                            <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].name"></label>
                             <input type="text" x-model="cliente.nombre" placeholder="Ej. Gustavo Cruz" 
                                    class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
                         </div>
-
                         <div class="space-y-2">
-                            <label class="text-xs font-bold uppercase text-gray-400 ml-2">Teléfono</label>
+                            <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].phone"></label>
                             <input type="tel" x-model="cliente.telefono" placeholder="Ej. 5512345678" maxlength="15"
                                    class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
                         </div>
-
                         <div class="md:col-span-2 space-y-2">
-                            <label class="text-xs font-bold uppercase text-gray-400 ml-2">Correo Electrónico</label>
+                            <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].email"></label>
                             <input type="email" x-model="cliente.email" placeholder="ejemplo@correo.com" 
                                    class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
                         </div>
-
                         <div class="md:col-span-2 space-y-2">
-                            <label class="text-xs font-bold uppercase text-gray-400 ml-2">Dirección de Entrega</label>
-                            <textarea x-model="cliente.direccion" placeholder="Calle, número, colonia, ciudad y CP..." rows="3"
+                            <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].address"></label>
+                            <textarea x-model="cliente.direccion" rows="3"
                                       class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="mt-8 pt-6 border-t border-dashed border-gray-300 dark:border-gray-700">
+                        <label class="flex items-center gap-3 cursor-pointer select-none">
+                            <div class="relative">
+                                <input type="checkbox" x-model="crearCuenta" class="sr-only peer">
+                                <div class="w-10 h-6 bg-gray-300 rounded-full peer peer-checked:bg-perpetua-aqua transition-all"></div>
+                                <div class="absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-all peer-checked:translate-x-4"></div>
+                            </div>
+                            <span class="font-bold text-sm" x-text="t[lang].createAccount"></span>
+                        </label>
+
+                        <div x-show="crearCuenta" x-transition class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 bg-perpetua-blue/5 p-4 rounded-xl border border-perpetua-blue/10">
+                            <div>
+                                <label class="text-[10px] font-bold uppercase text-gray-400 ml-1" x-text="t[lang].pass"></label>
+                                <input type="password" x-model="newAccount.password" class="w-full px-4 py-2 rounded-lg border focus:border-perpetua-aqua outline-none bg-white dark:bg-gray-800">
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold uppercase text-gray-400 ml-1" x-text="t[lang].confirmPass"></label>
+                                <input type="password" x-model="newAccount.confirm" class="w-full px-4 py-2 rounded-lg border focus:border-perpetua-aqua outline-none bg-white dark:bg-gray-800">
+                            </div>
+                            <p class="md:col-span-2 text-xs text-red-500 font-bold" x-show="newAccount.password !== newAccount.confirm && newAccount.confirm.length > 0" x-text="t[lang].passMismatch"></p>
                         </div>
                     </div>
                 </div>
 
-                <div class="glass p-8 rounded-[2rem] shadow-xl transition-all" 
-                     :class="formValido() ? 'opacity-100' : 'opacity-50 grayscale pointer-events-none'">
+                <div class="glass p-8 rounded-[2rem] shadow-xl transition-all" :class="formValido() ? 'opacity-100' : 'opacity-50 grayscale pointer-events-none'">
                     <h2 class="text-xl font-black mb-6 uppercase flex items-center gap-3">
-                        <i data-lucide="credit-card" class="text-perpetua-aqua"></i> Método de Pago
+                        <i data-lucide="credit-card" class="text-perpetua-aqua"></i> <span x-text="t[lang].paymentTitle"></span>
                     </h2>
                     <div id="paypal-button-container"></div>
-                    
-                    <p class="text-[10px] text-center mt-4 text-gray-400 font-bold uppercase tracking-widest">
-                        Pago 100% Seguro Encriptado por PayPal
-                    </p>
+                    <p class="text-[10px] text-center mt-4 text-gray-400 font-bold uppercase tracking-widest" x-text="t[lang].securePayment"></p>
                 </div>
             </div>
 
             <div class="lg:col-span-1">
                 <div class="glass p-6 rounded-[2rem] shadow-xl sticky top-24 border-b-4 border-perpetua-blue">
-                    <h3 class="font-black uppercase text-sm mb-6 pb-2 border-b dark:border-gray-700">Tu Pedido</h3>
-                    
+                    <h3 class="font-black uppercase text-sm mb-6 pb-2 border-b dark:border-gray-700" x-text="t[lang].yourOrder"></h3>
                     <div class="space-y-4 max-h-[40vh] overflow-y-auto pr-2 mb-6 custom-scrollbar">
                         <template x-for="item in cart" :key="item.id">
                             <div class="flex items-center gap-3">
                                 <img :src="procesarImagen(item.img)" class="w-12 h-12 rounded-xl object-contain bg-white p-1 border">
                                 <div class="flex-1">
                                     <p class="text-xs font-bold uppercase truncate w-32" x-text="item.nombre"></p>
-                                    <p class="text-[10px] text-gray-400" x-text="item.qty + ' unidad(es)'"></p>
+                                    <p class="text-[10px] text-gray-400" x-text="item.qty + ' ' + t[lang].units"></p>
                                 </div>
-                                <span class="font-bold text-perpetua-blue dark:text-perpetua-aqua" 
-                                      x-text="'$' + (item.precio * item.qty).toFixed(2)"></span>
+                                <span class="font-bold text-perpetua-blue dark:text-perpetua-aqua" x-text="'$' + (item.precio * item.qty).toFixed(2)"></span>
                             </div>
                         </template>
                     </div>
-
                     <div class="pt-4 border-t dark:border-gray-700 space-y-2">
                         <div class="flex justify-between text-gray-400 font-bold text-[10px] uppercase">
-                            <span>Subtotal</span>
+                            <span x-text="t[lang].subtotal"></span>
                             <span x-text="'$' + totalPrice()"></span>
                         </div>
                         <div class="flex justify-between text-gray-400 font-bold text-[10px] uppercase">
-                            <span>Envío</span>
-                            <span class="text-green-500 font-bold">Gratis</span>
+                            <span x-text="t[lang].shipping"></span>
+                            <span class="text-green-500 font-bold" x-text="t[lang].free"></span>
                         </div>
                         <div class="flex justify-between items-end pt-2">
-                            <span class="font-black text-lg uppercase tracking-tighter">Total</span>
+                            <span class="font-black text-lg uppercase tracking-tighter" x-text="t[lang].total"></span>
                             <span class="font-black text-2xl text-perpetua-blue dark:text-perpetua-aqua" x-text="'$' + totalPrice()"></span>
                         </div>
                     </div>
@@ -238,8 +418,8 @@ require_once 'api/conexion.php';
 
     <div x-show="isProcessing" class="fixed inset-0 bg-perpetua-blue/90 backdrop-blur-md z-[100] flex flex-col items-center justify-center text-white" x-cloak>
         <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-perpetua-aqua mb-4"></div>
-        <p class="font-black uppercase tracking-widest animate-pulse">Procesando tu pedido...</p>
-        <p class="text-sm mt-2 opacity-70">No cierres esta ventana</p>
+        <p class="font-black uppercase tracking-widest animate-pulse" x-text="t[lang].processing"></p>
+        <p class="text-sm mt-2 opacity-70" x-text="t[lang].wait"></p>
     </div>
 
 </body>

@@ -1,42 +1,25 @@
 <?php
 /**
- * LÓGICA DE DATOS OPTIMIZADA PARA NUEVA ESTRUCTURA DE IMÁGENES
+ * index.php - Tienda Elite con Login/Recuperación Bilingüe
  */
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
-
 require_once 'api/conexion.php'; 
 
-// Ya no necesitamos group_concat_max_len porque no usamos GROUP_CONCAT
-
-// MODIFICACIÓN: Consulta directa sin JOINs, mucho más rápida.
+// CONSULTA DE PRODUCTOS
 $query = "SELECT * FROM kaiexper_perpetualife.productos WHERE activo = 1";
-
 $resultado = $conn->query($query);
 $productos = [];
 $categorias = ['Todos']; 
 
 if ($resultado && $resultado->num_rows > 0) {
     while($row = $resultado->fetch_assoc()) {
-        
-        // --- LÓGICA DE IMÁGENES ACTUALIZADA ---
         $imgs = [];
-        
-        // Verificamos cada columna de imagen y agregamos la ruta 'imgProd/'
-        if (!empty($row['imagen1'])) {
-            $imgs[] = 'imgProd/' . $row['imagen1'];
-        }
-        if (!empty($row['imagen2'])) {
-            $imgs[] = 'imgProd/' . $row['imagen2'];
-        }
-        if (!empty($row['imagen3'])) {
-            $imgs[] = 'imgProd/' . $row['imagen3'];
-        }
+        if (!empty($row['imagen1'])) $imgs[] = 'imgProd/' . $row['imagen1'];
+        if (!empty($row['imagen2'])) $imgs[] = 'imgProd/' . $row['imagen2'];
+        if (!empty($row['imagen3'])) $imgs[] = 'imgProd/' . $row['imagen3'];
 
-        // Si no hay ninguna imagen cargada, ponemos una por defecto
         $row['imagenes'] = !empty($imgs) ? $imgs : ['https://via.placeholder.com/400?text=Sin+Imagen'];
-        // --------------------------------------
-
         $row['precio'] = (float)$row['precio'];
         $row['precio_anterior'] = $row['precio_anterior'] ? (float)$row['precio_anterior'] : null;
         $row['stock'] = (int)$row['stock'];
@@ -45,9 +28,7 @@ if ($resultado && $resultado->num_rows > 0) {
         $row['categoria'] = $row['categoria'] ?? 'General';
         $row['calificacion'] = (float)($row['calificacion'] ?? 5.0);
         
-        if (!in_array($row['categoria'], $categorias)) {
-            $categorias[] = $row['categoria'];
-        }
+        if (!in_array($row['categoria'], $categorias)) $categorias[] = $row['categoria'];
         $productos[] = $row;
     }
 }
@@ -59,12 +40,10 @@ if ($resultado && $resultado->num_rows > 0) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Perpetua Life | Store Elite</title>
-    
     <link rel="icon" type="image/png" href="imagenes/KAI_NG.png">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://www.paypal.com/sdk/js?client-id=test&currency=MXN"></script>
     
     <script>
         tailwind.config = {
@@ -90,38 +69,69 @@ if ($resultado && $resultado->num_rows > 0) {
                 selectedProduct: null,
                 isScanning: false,
                 showToast: false,
-                isPaying: false, 
-                payProgress: 0,
-                showSuccess: false,
+                
+                // Variables Login/Recuperación
+                showLoginModal: false,
+                view: 'login', // 'login' o 'recover'
+                user: JSON.parse(localStorage.getItem('cliente_perpetua')) || null,
+                loginData: { email: '', password: '' },
+                loginError: '',
+                recEmail: '',
+                recMsg: '',
+
                 cart: JSON.parse(localStorage.getItem('cart')) || [],
                 
                 init() {
                     this.$watch('selectedProduct', (val) => { if (val) setTimeout(() => lucide.createIcons(), 50); });
-                    this.$watch('showSuccess', (val) => { if (val) setTimeout(() => lucide.createIcons(), 50); });
                     this.$watch('cartOpen', (val) => { if (val) setTimeout(() => lucide.createIcons(), 50); });
                     lucide.createIcons();
                 },
 
+                // TRADUCCIONES COMPLETAS
                 t: {
                     es: { 
                         added: 'Producto añadido', add: 'Añadir al carrito', cart: 'Tu Carrito', empty: 'Vacío', 
                         total: 'Total', pay: 'Finalizar Compra', stock: 'STOCK', price: 'Precio', 
                         langBtn: 'English', scan: 'ESCANEANDO...', powered: 'POWERED BY',
-                        encrypting: 'Procesando pago seguro...', success: '¡Compra Exitosa!', qty: 'CANT.',
-                        units: 'unidades', noStock: 'Límite alcanzado', sale: 'EN OFERTA', top: 'TOP VENTAS',
+                        success: '¡Compra Exitosa!', qty: 'CANT.', units: 'unidades', 
+                        noStock: 'Límite alcanzado', sale: 'EN OFERTA', top: 'TOP VENTAS',
                         lastUnits: '¡ÚLTIMAS PIEZAS!', info: 'MÁS INFORMACIÓN',
                         searchPlaceholder: 'Buscar productos...',
-                        cat: { 'Todos': 'Todos', 'Suplementos': 'Suplementos', 'Equipamiento': 'Equipamiento' }
+                        cat: { 'Todos': 'Todos', 'Suplementos': 'Suplementos', 'Equipamiento': 'Equipamiento' },
+                        // Login & Recuperación
+                        welcome: 'Bienvenido', 
+                        email: 'Correo Electrónico', pass: 'Contraseña', 
+                        forgot: '¿Olvidaste tu contraseña?', loginBtn: 'Iniciar Sesión',
+                        clientQuestion: '¿Ya eres cliente?', clientDesc: 'Inicia sesión para cargar tus datos automáticamente.',
+                        loginAction: 'Iniciar Sesión',
+                        recoverTitle: 'Recuperar Cuenta', 
+                        recoverDesc: 'Ingresa tu correo para recibir un enlace de restablecimiento.',
+                        yourEmail: 'Tu Correo Registrado', sendLink: 'Enviar Enlace', 
+                        cancel: 'Cancelar y Volver',
+                        loginError: 'Error de conexión',
+                        welcomeUser: '¡Bienvenido '
                     },
                     en: { 
                         added: 'Added', add: 'Add to cart', cart: 'Your Cart', empty: 'Empty', 
                         total: 'Total', pay: 'Checkout', stock: 'STOCK', price: 'Price', 
                         langBtn: 'Español', scan: 'SCANNING...', powered: 'POWERED BY',
-                        encrypting: 'Processing secure payment...', success: 'Success!', qty: 'QTY',
-                        units: 'units', noStock: 'Limit reached', sale: 'ON SALE', top: 'TOP SELLER',
+                        success: 'Success!', qty: 'QTY', units: 'units', 
+                        noStock: 'Limit reached', sale: 'ON SALE', top: 'TOP SELLER',
                         lastUnits: 'LAST UNITS!', info: 'MORE INFORMATION',
                         searchPlaceholder: 'Search products...',
-                        cat: { 'Todos': 'All', 'Suplementos': 'Supplements', 'Equipamiento': 'Equipment' }
+                        cat: { 'Todos': 'All', 'Suplementos': 'Supplements', 'Equipamiento': 'Equipment' },
+                        // Login & Recovery
+                        welcome: 'Welcome', 
+                        email: 'Email Address', pass: 'Password', 
+                        forgot: 'Forgot password?', loginBtn: 'Login',
+                        clientQuestion: 'Already a customer?', clientDesc: 'Login to load your data automatically.',
+                        loginAction: 'Login',
+                        recoverTitle: 'Recover Account', 
+                        recoverDesc: 'Enter your email to receive a reset link.',
+                        yourEmail: 'Your Registered Email', sendLink: 'Send Link', 
+                        cancel: 'Cancel and Return',
+                        loginError: 'Connection error',
+                        welcomeUser: 'Welcome '
                     }
                 },
 
@@ -152,48 +162,65 @@ if ($resultado && $resultado->num_rows > 0) {
                     this.saveCart();
                 },
 
-                initPayPal() {
-                    this.isPaying = true;
-                    this.payProgress = 15;
-                    
-                    const container = document.getElementById('paypal-button-container');
-                    if (container) container.innerHTML = '';
+                saveCart() { localStorage.setItem('cart', JSON.stringify(this.cart)); setTimeout(() => lucide.createIcons(), 50); },
+                totalPrice() { return this.cart.reduce((s, i) => s + (i.precio * i.qty), 0).toFixed(2); },
 
-                    paypal.Buttons({
-                        createOrder: (data, actions) => {
-                            this.payProgress = 40;
-                            return actions.order.create({ purchase_units: [{ amount: { value: this.totalPrice() } }] });
-                        },
-                        onApprove: (data, actions) => {
-                            this.payProgress = 75;
-                            return actions.order.capture().then((details) => {
-                                return fetch('api/confirmar_pago.php', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ orderID: data.orderID, cart: this.cart, total: this.totalPrice() })
-                                })
-                                .then(res => res.json())
-                                .then(res => {
-                                    if(res.status === 'success') {
-                                        this.payProgress = 100;
-                                        setTimeout(() => {
-                                            this.isPaying = false;
-                                            this.showSuccess = true;
-                                            this.cart = [];
-                                            this.saveCart();
-                                        }, 400);
-                                        setTimeout(() => { this.showSuccess = false; this.cartOpen = false; }, 4000);
-                                    }
-                                });
-                            });
-                        },
-                        onCancel: () => { this.isPaying = false; this.payProgress = 0; },
-                        onError: () => { this.isPaying = false; this.payProgress = 0; }
-                    }).render('#paypal-button-container');
+                // LOGIN
+                login() {
+                    this.loginError = '';
+                    fetch('api/login_checkout.php', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(this.loginData)
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data.success) {
+                            const userData = {
+                                nombre: data.datos.nombre,
+                                email: this.loginData.email,
+                                telefono: data.datos.telefono,
+                                direccion: data.datos.direccion
+                            };
+                            this.user = userData;
+                            localStorage.setItem('cliente_perpetua', JSON.stringify(userData)); 
+                            this.showLoginModal = false;
+                            alert(this.t[this.lang].welcomeUser + data.datos.nombre + '!');
+                        } else {
+                            this.loginError = data.message;
+                        }
+                    })
+                    .catch(err => {
+                        this.loginError = this.t[this.lang].loginError;
+                    });
                 },
 
-                saveCart() { localStorage.setItem('cart', JSON.stringify(this.cart)); setTimeout(() => lucide.createIcons(), 50); },
-                totalPrice() { return this.cart.reduce((s, i) => s + (i.precio * i.qty), 0).toFixed(2); }
+                // RECUPERAR
+                recoverPassword() {
+                    this.recMsg = '';
+                    if(!this.recEmail.includes('@')) {
+                        this.recMsg = 'Email invalido / Invalid email';
+                        return;
+                    }
+                    fetch('api/solicitar_reset.php', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ email: this.recEmail })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        this.recMsg = data.message;
+                        if(data.debug_link) alert("DEV MODE Link: " + data.debug_link);
+                    })
+                    .catch(err => {
+                        this.recMsg = "Error";
+                    });
+                },
+                
+                logout() {
+                    this.user = null;
+                    localStorage.removeItem('cliente_perpetua');
+                }
             }
         }
     </script>
@@ -206,12 +233,10 @@ if ($resultado && $resultado->num_rows > 0) {
         .glass { backdrop-blur: 14px; background: rgba(255, 255, 255, 0.85); border: 1px solid rgba(30, 58, 138, 0.1); }
         .dark .glass { background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255, 255, 255, 0.1); }
         
-        /* Animación Scanner */
         @keyframes scan { 0% { top: 0%; opacity: 0; } 50% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
         .scanner-line { height: 4px; background: #22d3ee; box-shadow: 0 0 20px #22d3ee; position: absolute; width: 100%; z-index: 40; animation: scan 2s linear infinite; }
         .grid-overlay { background-image: linear-gradient(rgba(34, 211, 238, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(34, 211, 238, 0.1) 1px, transparent 1px); background-size: 20px 20px; }
         
-        /* Badges */
         .sale-badge { background-color: #FF9900; color: white; font-weight: 800; padding: 5px 12px; clip-path: polygon(0 0, 100% 0, 90% 50%, 100% 100%, 0 100%); z-index: 40; }
         .last-units-badge { background-color: #EF4444; color: white; font-weight: 800; padding: 5px 12px; clip-path: polygon(0 0, 100% 0, 90% 50%, 100% 100%, 0 100%); z-index: 40; }
         .top-badge { background: linear-gradient(to right, #1e3a8a, #22d3ee); color: white; font-weight: 800; padding: 5px 12px; clip-path: polygon(0 0, 90% 0, 100% 50%, 90% 100%, 0 100%); z-index: 40; }
@@ -224,6 +249,55 @@ if ($resultado && $resultado->num_rows > 0) {
     <div x-show="showToast" x-cloak x-transition class="fixed top-5 right-5 z-[100] px-6 py-4 glass rounded-2xl shadow-2xl flex items-center gap-4 border-l-4 border-perpetua-aqua">
         <i data-lucide="check-circle" class="w-6 h-6 text-perpetua-aqua"></i>
         <p class="text-sm font-bold" x-text="t[lang].added"></p>
+    </div>
+
+    <div x-show="showLoginModal" x-cloak class="fixed inset-0 z-[200] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showLoginModal = false; view='login'"></div>
+        
+        <div x-show="showLoginModal" x-transition class="relative bg-white dark:bg-gray-800 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 dark:border-gray-700">
+            
+            <div x-show="view === 'login'">
+                <h3 class="text-2xl font-black text-center mb-6 uppercase text-perpetua-blue dark:text-perpetua-aqua" x-text="t[lang].welcome"></h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].email"></label>
+                        <input type="email" x-model="loginData.email" placeholder="ejemplo@correo.com" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].pass"></label>
+                        <input type="password" x-model="loginData.password" placeholder="••••••" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
+                    </div>
+                    
+                    <div class="flex justify-end">
+                        <button @click="view = 'recover'" class="text-xs font-bold text-gray-400 hover:text-perpetua-aqua" x-text="t[lang].forgot"></button>
+                    </div>
+
+                    <p x-show="loginError" x-text="loginError" class="text-center text-xs text-red-500 font-bold"></p>
+
+                    <button @click="login()" class="w-full btn-gradient text-white py-3 rounded-xl font-bold uppercase tracking-widest shadow-lg" x-text="t[lang].loginBtn"></button>
+                </div>
+            </div>
+
+            <div x-show="view === 'recover'">
+                <h3 class="text-xl font-black text-center mb-2 uppercase text-gray-700 dark:text-white" x-text="t[lang].recoverTitle"></h3>
+                <p class="text-xs text-center text-gray-400 mb-6" x-text="t[lang].recoverDesc"></p>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].yourEmail"></label>
+                        <input type="email" x-model="recEmail" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
+                    </div>
+
+                    <p x-show="recMsg" x-text="recMsg" class="text-center text-xs font-bold text-green-500"></p>
+
+                    <button @click="recoverPassword()" class="w-full bg-slate-900 text-white py-3 rounded-xl font-bold uppercase tracking-widest hover:bg-perpetua-aqua transition" x-text="t[lang].sendLink"></button>
+                    
+                    <button @click="view = 'login'" class="w-full text-center text-xs font-bold text-gray-400 hover:text-gray-600 py-2" x-text="t[lang].cancel"></button>
+                </div>
+            </div>
+
+            <button @click="showLoginModal = false; view='login'" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-6 h-6"></i></button>
+        </div>
     </div>
 
     <header class="sticky top-0 z-40 glass border-b border-perpetua-blue/10">
@@ -241,6 +315,13 @@ if ($resultado && $resultado->num_rows > 0) {
             </div>
 
             <div class="flex items-center gap-3">
+                <template x-if="user">
+                    <div class="flex items-center gap-2 bg-perpetua-blue/10 px-3 py-1 rounded-full">
+                        <span class="text-xs font-bold text-perpetua-blue dark:text-perpetua-aqua" x-text="user.nombre.split(' ')[0]"></span>
+                        <button @click="logout()" title="Cerrar sesión" class="text-red-400 hover:text-red-600"><i data-lucide="log-out" class="w-3 h-3"></i></button>
+                    </div>
+                </template>
+
                 <button @click="switchLang()" class="px-3 py-1 rounded-full text-[10px] font-bold border-2 border-perpetua-blue text-perpetua-blue dark:text-perpetua-aqua transition-all">
                     <span x-text="t[lang].langBtn"></span>
                 </button>
@@ -263,6 +344,21 @@ if ($resultado && $resultado->num_rows > 0) {
     </header>
 
     <main class="max-w-7xl mx-auto px-4 py-6 flex-grow">
+        
+        <div x-show="!user" class="mb-8 rounded-2xl border border-gray-200 bg-white p-4 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-sm" x-cloak>
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-perpetua-blue">
+                    <i data-lucide="user" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h4 class="font-bold text-gray-900 text-sm" x-text="t[lang].clientQuestion"></h4>
+                    <p class="text-xs text-gray-500" x-text="t[lang].clientDesc"></p>
+                </div>
+            </div>
+            <button @click="showLoginModal = true" class="bg-perpetua-blue hover:bg-blue-800 text-white font-bold py-2 px-6 rounded-lg text-xs transition-colors w-full sm:w-auto" x-text="t[lang].loginAction">
+            </button>
+        </div>
+
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
             <?php foreach($productos as $p): ?>
             <div x-show="(currentCategory === 'Todos' || currentCategory === '<?php echo $p['categoria']; ?>') && '<?php echo strtolower($p['nombre']); ?>'.includes(searchQuery.toLowerCase())"
@@ -313,7 +409,13 @@ if ($resultado && $resultado->num_rows > 0) {
                     </div>
 
                     <div class="mt-auto pt-4 border-t dark:border-gray-700 flex flex-col gap-2">
-                        <span class="text-2xl font-black text-perpetua-blue dark:text-perpetua-aqua">$<?php echo number_format($p['precio'], 2); ?></span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-2xl font-black text-perpetua-blue dark:text-perpetua-aqua">$<?php echo number_format($p['precio'], 2); ?></span>
+                            <?php if($p['en_oferta'] && $p['precio_anterior'] > 0): ?>
+                                <span class="text-xs text-gray-400 line-through font-bold">$<?php echo number_format($p['precio_anterior'], 2); ?></span>
+                            <?php endif; ?>
+                        </div>
+
                         <button @click="addToCart(<?php echo htmlspecialchars(json_encode($p), ENT_QUOTES, 'UTF-8'); ?>, selectedQty); selectedQty = 1" 
                                 class="btn-gradient text-white w-full py-3.5 rounded-xl font-black uppercase shadow-lg text-xs flex items-center justify-center gap-2">
                             <i data-lucide="shopping-cart" class="w-4 h-4"></i><span x-text="t[lang].add"></span>
@@ -337,8 +439,8 @@ if ($resultado && $resultado->num_rows > 0) {
             </template>
         </button>
         
-        <div x-show="cartOpen" @click.away="!isPaying && (cartOpen = false)" x-transition class="absolute bottom-20 right-0 w-80 md:w-96 rounded-3xl shadow-2xl glass border-2 border-perpetua-blue/20 overflow-hidden min-h-[200px]">
-            <div x-show="!isPaying && !showSuccess">
+        <div x-show="cartOpen" @click.away="cartOpen = false" x-transition class="absolute bottom-20 right-0 w-80 md:w-96 rounded-3xl shadow-2xl glass border-2 border-perpetua-blue/20 overflow-hidden min-h-[200px]">
+            <div>
                 <div class="p-4 bg-perpetua-blue text-white flex justify-between items-center font-bold uppercase text-sm">
                     <span x-text="t[lang].cart"></span>
                     <button @click="cartOpen = false" class="hover:rotate-180 transition-transform duration-500 p-1"><i data-lucide="x" class="w-5 h-5"></i></button>
@@ -358,6 +460,10 @@ if ($resultado && $resultado->num_rows > 0) {
                             </div>
                         </div>
                     </template>
+                    <div x-show="cart.length === 0" class="text-center py-8 text-gray-400">
+                        <i data-lucide="shopping-bag" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                        <p x-text="t[lang].empty"></p>
+                    </div>
                 </div>
                 <div class="p-4 bg-gray-50 dark:bg-gray-900 border-t dark:border-gray-700" x-show="cart.length > 0">
                     <div class="flex justify-between font-bold mb-4 dark:text-white uppercase"><span x-text="t[lang].total"></span><span class="text-perpetua-aqua" x-text="'$' + totalPrice()"></span></div>
@@ -366,25 +472,6 @@ if ($resultado && $resultado->num_rows > 0) {
                             x-text="t[lang].pay">
                     </button>
                 </div>
-            </div>
-
-            <div x-show="isPaying" class="p-8 flex flex-col gap-4">
-                <div class="flex justify-between items-center mb-2">
-                    <span class="font-bold text-xs uppercase dark:text-white">Pago Seguro</span>
-                    <button @click="isPaying = false" class="hover:rotate-180 transition-transform"><i data-lucide="x" class="w-4 h-4"></i></button>
-                </div>
-                
-                <div class="w-full bg-gray-200 dark:bg-gray-700 h-2 rounded-full overflow-hidden mb-2">
-                    <div class="bg-perpetua-aqua h-full transition-all duration-500 shadow-[0_0_10px_#22d3ee]" :style="`width: ${payProgress}%`"></div >
-                </div>
-
-                <div id="paypal-button-container" class="min-h-[150px]"></div>
-                <div class="text-center text-[10px] text-gray-400 font-bold uppercase animate-pulse" x-text="t[lang].encrypting"></div>
-            </div>
-
-            <div x-show="showSuccess" x-cloak class="p-12 flex flex-col items-center gap-4 text-center">
-                <i data-lucide="party-popper" class="w-16 h-16 text-perpetua-orange animate-bounce"></i>
-                <h2 class="text-2xl font-black text-perpetua-blue dark:text-perpetua-aqua uppercase" x-text="t[lang].success"></h2>
             </div>
         </div>
     </div>
