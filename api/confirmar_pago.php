@@ -1,8 +1,12 @@
 <?php
+/**
+ * api/confirmar_pago.php
+ * Versión ROBUSTA (La tuya)
+ */
 header('Content-Type: application/json');
-require_once 'conexion.php';
+require_once 'conexion.php'; // Asegúrate que este archivo crea la variable $conn como new mysqli(...)
 
-// Recibimos los datos JSON del frontend
+// 1. Recibimos los datos JSON
 $input = json_decode(file_get_contents('php://input'), true);
 
 if (!$input) {
@@ -11,35 +15,36 @@ if (!$input) {
 }
 
 $orderID = $input['orderID'];
-$clienteData = $input['cliente']; // Contiene: nombre, email, telefono, direccion
+$clienteData = $input['cliente']; // { nombre, email, telefono, direccion }
 $cart = $input['cart'];
 $total = $input['total'];
 
-// Iniciamos la transacción (ACID)
+// 2. Iniciar Transacción
 $conn->begin_transaction();
 
 try {
     // ---------------------------------------------------------
-    // PASO 1: GESTIONAR EL CLIENTE (Tabla 'clientes')
+    // PASO 1: GESTIONAR EL CLIENTE
     // ---------------------------------------------------------
     $cliente_id = 0;
     
-    // Verificamos si existe por email
+    // Buscamos por email
     $stmtCheck = $conn->prepare("SELECT id FROM clientes WHERE email = ? LIMIT 1");
     $stmtCheck->bind_param("s", $clienteData['email']);
     $stmtCheck->execute();
     $resCheck = $stmtCheck->get_result();
 
     if ($resCheck->num_rows > 0) {
-        // CLIENTE EXISTE: Actualizamos Dirección y Teléfono
+        // ACTUALIZAR EXISTENTE
         $row = $resCheck->fetch_assoc();
         $cliente_id = $row['id'];
         
+        // Actualizamos incluyendo el TELEFONO
         $stmtUpdate = $conn->prepare("UPDATE clientes SET nombre = ?, direccion = ?, telefono = ? WHERE id = ?");
         $stmtUpdate->bind_param("sssi", $clienteData['nombre'], $clienteData['direccion'], $clienteData['telefono'], $cliente_id);
         $stmtUpdate->execute();
     } else {
-        // CLIENTE NUEVO: Insertamos todo (incluyendo teléfono)
+        // CREAR NUEVO
         $stmtInsertCli = $conn->prepare("INSERT INTO clientes (nombre, email, telefono, direccion, fecha_registro) VALUES (?, ?, ?, ?, NOW())");
         $stmtInsertCli->bind_param("ssss", $clienteData['nombre'], $clienteData['email'], $clienteData['telefono'], $clienteData['direccion']);
         
@@ -50,7 +55,7 @@ try {
     }
 
     // ---------------------------------------------------------
-    // PASO 2: CREAR EL PEDIDO (Tabla 'pedidos')
+    // PASO 2: CREAR EL PEDIDO
     // ---------------------------------------------------------
     $estado = 'PAGADO';
     $moneda = 'MXN'; 
@@ -64,16 +69,16 @@ try {
     $pedido_id = $conn->insert_id;
 
     // ---------------------------------------------------------
-    // PASO 3: INSERTAR DETALLES Y DESCONTAR STOCK
+    // PASO 3: DETALLES Y STOCK
     // ---------------------------------------------------------
     $stmtDetalle = $conn->prepare("INSERT INTO detalles_pedido (pedido_id, producto_id, cantidad, precio_unitario) VALUES (?, ?, ?, ?)");
     $stmtStock = $conn->prepare("UPDATE productos SET stock = stock - ? WHERE id = ?");
 
     foreach ($cart as $item) {
-        // Insertar detalle
+        // Insertar Detalle
         $stmtDetalle->bind_param("iiid", $pedido_id, $item['id'], $item['qty'], $item['precio']);
         if (!$stmtDetalle->execute()) {
-            throw new Exception("Error al insertar detalle ID: " . $item['id']);
+            throw new Exception("Error al insertar detalle producto ID: " . $item['id']);
         }
 
         // Descontar Stock
@@ -81,11 +86,16 @@ try {
         $stmtStock->execute();
     }
 
+    // Confirmar todo
     $conn->commit();
     echo json_encode(['status' => 'success', 'pedido_id' => $pedido_id]);
 
 } catch (Exception $e) {
+    // Si algo falla, deshacer cambios
     $conn->rollback();
-    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+    // Loguear el error real en el servidor (opcional)
+    error_log($e->getMessage());
+    // Responder al frontend
+    echo json_encode(['status' => 'error', 'message' => 'Error al procesar: ' . $e->getMessage()]);
 }
 ?>

@@ -16,7 +16,7 @@ require_once 'api/conexion.php';
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://www.paypal.com/sdk/js?client-id=test&currency=MXN"></script>
+    <script src="https://www.paypal.com/sdk/js?client-id=AR2yUZcO674dQIfZR6ks44WIf_rq5oLHx9adznrIKHOo5J6qcrKuoGURz3pnSYQwUjBEjEasWT5GWpSW&currency=MXN"></script>
     
     <script>
         tailwind.config = {
@@ -38,24 +38,30 @@ require_once 'api/conexion.php';
                 cliente: {
                     nombre: '',
                     email: '',
-                    telefono: '', // NUEVO CAMPO
+                    telefono: '', // CAMPO REQUERIDO
                     direccion: ''
                 },
                 isProcessing: false,
 
                 init() {
+                    // Validar si hay carrito
                     if (this.cart.length === 0) {
                         alert("Tu carrito está vacío");
                         window.location.href = 'index.php';
+                        return;
                     }
                     lucide.createIcons();
                     this.renderPayPal();
                 },
 
+                // Lógica de Corrección de Imágenes
                 procesarImagen(img) {
                     if (!img) return 'https://via.placeholder.com/150';
+                    // Si ya es una URL completa (http/https), la dejamos igual
                     if (img.includes('http')) return img;
+                    // Si ya tiene el prefijo, lo dejamos igual
                     if (img.includes('imgProd/')) return img;
+                    // Si no, le agregamos el prefijo
                     return 'imgProd/' + img;
                 },
 
@@ -64,10 +70,9 @@ require_once 'api/conexion.php';
                 },
 
                 formValido() {
-                    // VALIDACIÓN ACTUALIZADA CON TELÉFONO
                     return this.cliente.nombre.length > 2 && 
                            this.cliente.email.includes('@') && 
-                           this.cliente.telefono.length > 9 && // Mínimo 10 dígitos
+                           this.cliente.telefono.length >= 10 && // Validación teléfono (min 10 dígitos)
                            this.cliente.direccion.length > 5;
                 },
 
@@ -75,9 +80,10 @@ require_once 'api/conexion.php';
                     paypal.Buttons({
                         style: { layout: 'vertical', color: 'blue', shape: 'pill', label: 'pay' },
                         
+                        // Validación antes de abrir PayPal
                         onClick: (data, actions) => {
                             if (!this.formValido()) {
-                                alert("Por favor, completa todos los datos de envío (incluyendo teléfono) antes de proceder.");
+                                alert("Por favor, completa todos los datos de envío (incluyendo un teléfono válido de 10 dígitos) antes de proceder.");
                                 return actions.reject();
                             }
                         },
@@ -85,6 +91,7 @@ require_once 'api/conexion.php';
                         createOrder: (data, actions) => {
                             return actions.order.create({
                                 purchase_units: [{
+                                    description: "Compra en Perpetualife",
                                     amount: { value: this.totalPrice() }
                                 }]
                             });
@@ -93,14 +100,16 @@ require_once 'api/conexion.php';
                         onApprove: (data, actions) => {
                             this.isProcessing = true;
                             return actions.order.capture().then((details) => {
+                                // Enviar datos al backend
                                 return fetch('api/confirmar_pago.php', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
                                         orderID: data.orderID,
+                                        payerID: details.payer.payer_id,
                                         cart: this.cart,
                                         total: this.totalPrice(),
-                                        cliente: this.cliente // Aquí ya va el teléfono incluido
+                                        cliente: this.cliente // Incluye el teléfono
                                     })
                                 })
                                 .then(res => res.json())
@@ -109,9 +118,13 @@ require_once 'api/conexion.php';
                                         localStorage.removeItem('cart'); 
                                         window.location.href = 'gracias.php?id=' + res.pedido_id; 
                                     } else {
-                                        alert("Error: " + res.message);
-                                        this.isProcessing = false;
+                                        throw new Error(res.message || "Error desconocido");
                                     }
+                                })
+                                .catch(err => {
+                                    console.error(err);
+                                    alert("Hubo un error al registrar tu pedido: " + err.message);
+                                    this.isProcessing = false;
                                 });
                             });
                         }
@@ -131,11 +144,11 @@ require_once 'api/conexion.php';
 
     <div class="max-w-6xl mx-auto px-4 py-10">
         <div class="flex justify-between items-center mb-10">
-            <a href="index.php" class="flex items-center gap-2 text-perpetua-blue dark:text-perpetua-aqua font-bold">
+            <a href="index.php" class="flex items-center gap-2 text-perpetua-blue dark:text-perpetua-aqua font-bold hover:underline">
                 <i data-lucide="arrow-left" class="w-5 h-5"></i> Volver a la tienda
             </a>
             <img :src="darkMode ? 'imagenes/designWhite.png' : 'imagenes/Perpetua_Life.png'" 
-                 class="h-10 w-auto object-contain transition-all duration-500">
+                 class="h-10 w-auto object-contain transition-all duration-500" alt="Logo Perpetualife">
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -174,11 +187,12 @@ require_once 'api/conexion.php';
                 </div>
 
                 <div class="glass p-8 rounded-[2rem] shadow-xl transition-all" 
-                     :class="formValido() ? 'opacity-100' : 'opacity-40 grayscale pointer-events-none'">
+                     :class="formValido() ? 'opacity-100' : 'opacity-50 grayscale pointer-events-none'">
                     <h2 class="text-xl font-black mb-6 uppercase flex items-center gap-3">
                         <i data-lucide="credit-card" class="text-perpetua-aqua"></i> Método de Pago
                     </h2>
                     <div id="paypal-button-container"></div>
+                    
                     <p class="text-[10px] text-center mt-4 text-gray-400 font-bold uppercase tracking-widest">
                         Pago 100% Seguro Encriptado por PayPal
                     </p>
@@ -189,7 +203,7 @@ require_once 'api/conexion.php';
                 <div class="glass p-6 rounded-[2rem] shadow-xl sticky top-24 border-b-4 border-perpetua-blue">
                     <h3 class="font-black uppercase text-sm mb-6 pb-2 border-b dark:border-gray-700">Tu Pedido</h3>
                     
-                    <div class="space-y-4 max-h-[40vh] overflow-y-auto pr-2 mb-6">
+                    <div class="space-y-4 max-h-[40vh] overflow-y-auto pr-2 mb-6 custom-scrollbar">
                         <template x-for="item in cart" :key="item.id">
                             <div class="flex items-center gap-3">
                                 <img :src="procesarImagen(item.img)" class="w-12 h-12 rounded-xl object-contain bg-white p-1 border">
@@ -210,7 +224,7 @@ require_once 'api/conexion.php';
                         </div>
                         <div class="flex justify-between text-gray-400 font-bold text-[10px] uppercase">
                             <span>Envío</span>
-                            <span class="text-green-500">Gratis</span>
+                            <span class="text-green-500 font-bold">Gratis</span>
                         </div>
                         <div class="flex justify-between items-end pt-2">
                             <span class="font-black text-lg uppercase tracking-tighter">Total</span>
@@ -225,6 +239,7 @@ require_once 'api/conexion.php';
     <div x-show="isProcessing" class="fixed inset-0 bg-perpetua-blue/90 backdrop-blur-md z-[100] flex flex-col items-center justify-center text-white" x-cloak>
         <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-perpetua-aqua mb-4"></div>
         <p class="font-black uppercase tracking-widest animate-pulse">Procesando tu pedido...</p>
+        <p class="text-sm mt-2 opacity-70">No cierres esta ventana</p>
     </div>
 
 </body>
