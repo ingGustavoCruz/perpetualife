@@ -48,40 +48,42 @@ try {
          x-transition.opacity
          class="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm"></div>
 
-    <aside class="fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0 md:static flex-shrink-0"
+    <aside class="fixed inset-y-0 left-0 z-50 w-64 bg-white text-slate-600 flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0 md:static flex-shrink-0 border-r border-slate-200 shadow-sm"
            :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'">
         
-        <div class="p-6 flex flex-col items-center border-b border-slate-800 relative">
-            <button @click="sidebarOpen = false" class="absolute top-4 right-4 text-slate-500 hover:text-white md:hidden">
+        <div class="p-6 flex flex-col items-center border-b border-slate-100 relative">
+            <button @click="sidebarOpen = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-800 md:hidden">
                 <i data-lucide="x" class="w-6 h-6"></i>
             </button>
 
             <img src="../imagenes/Perpetua_Life.png" alt="Perpetualife" class="hidden lg:block w-40 object-contain mb-2">
             <img src="../imagenes/logoPerpetua.png" alt="Perpetualife" class="block lg:hidden w-12 object-contain mb-2">
             
-            <span class="text-cyan-400 font-black tracking-widest text-sm">ADMIN</span>
+            <span class="text-cyan-600 font-black tracking-widest text-xl mt-1">ADMIN</span>
+            
         </div>
         
-        <nav class="flex-1 px-4 space-y-4 overflow-y-auto mt-6">
-            <a href="index.php" class="flex items-center gap-3 text-cyan-400 font-bold bg-white/10 p-3 rounded-xl">
+        <nav class="flex-1 px-4 space-y-3 overflow-y-auto mt-6">
+            
+            <a href="index.php" class="flex items-center gap-3 text-cyan-700 font-bold bg-cyan-50 p-3 rounded-xl border border-cyan-100">
                 <i data-lucide="layout-dashboard"></i> Dashboard
             </a>
             
-            <a href="productos.php" class="flex items-center gap-3 text-slate-400 hover:text-white transition p-3 rounded-xl hover:bg-white/5">
+            <a href="productos.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
                 <i data-lucide="package"></i> Productos
             </a>
             
-            <a href="cupones.php" class="flex items-center gap-3 text-slate-400 hover:text-white transition p-3 rounded-xl hover:bg-white/5">
+            <a href="cupones.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
                 <i data-lucide="ticket"></i> Cupones
             </a>
 
-            <a href="clientes.php" class="flex items-center gap-3 text-slate-400 hover:text-white transition p-3 rounded-xl hover:bg-white/5">
+            <a href="clientes.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
                 <i data-lucide="users"></i> Clientes
             </a>
         </nav>
 
-        <div class="p-4 border-t border-slate-800">
-            <a href="logout.php" class="flex items-center gap-3 text-red-400 hover:text-red-300 font-bold p-3 transition-colors">
+        <div class="p-4 border-t border-slate-100">
+            <a href="logout.php" class="flex items-center gap-3 text-red-500 hover:text-red-700 font-bold p-3 transition-colors hover:bg-red-50 rounded-xl">
                 <i data-lucide="log-out" class="w-5 h-5"></i> Cerrar Sesión
             </a>
         </div>
