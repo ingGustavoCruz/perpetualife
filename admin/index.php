@@ -1,13 +1,18 @@
 <?php
 /**
  * admin/index.php
- * Dashboard PRO: KPIs + Gráficas + Top Listas (Productos, Clientes y Estados)
+ * Dashboard PRO: KPIs + Gráficas (Ventas, Ticket Promedio, Cupones) + Tops
  */
 
 require_once 'verificar_sesion.php';
 require_once '../api/conexion.php';
 
 try {
+    // --- NUEVO: PRODUCTOS CON STOCK BAJO ---
+    $umbralStock = 5;
+    $sqlStockBajo = "SELECT nombre, stock FROM kaiexper_perpetualife.productos WHERE stock <= $umbralStock ORDER BY stock ASC";
+    $resStockBajo = $conn->query($sqlStockBajo);
+
     // --- 1. KPIS GENERALES ---
     $sqlKPI1 = "SELECT SUM(total) as total_ventas FROM kaiexper_perpetualife.pedidos WHERE estado IN ('COMPLETADO', 'PAGADO')";
     $resKPI1 = $conn->query($sqlKPI1);
@@ -21,8 +26,8 @@ try {
     $resKPI3 = $conn->query($sqlKPI3);
     $totalClientes = $resKPI3->fetch_assoc()['num_clientes'] ?? 0;
 
-    // --- 2. DATOS PARA GRÁFICA: VENTAS POR MES ---
-    $sqlChart = "SELECT DATE_FORMAT(fecha, '%Y-%m') as mes, SUM(total) as total 
+    // --- 2. DATOS PARA GRÁFICAS DE TENDENCIA (Ventas y Ticket Promedio) ---
+    $sqlChart = "SELECT DATE_FORMAT(fecha, '%Y-%m') as mes, SUM(total) as total, AVG(total) as promedio 
                  FROM kaiexper_perpetualife.pedidos 
                  WHERE estado IN ('COMPLETADO', 'PAGADO') 
                  GROUP BY mes 
@@ -31,14 +36,22 @@ try {
     
     $meses = [];
     $ventas = [];
+    $ticketsAvg = [];
     while($row = $resChart->fetch_assoc()){
         $meses[] = date('M Y', strtotime($row['mes'] . '-01'));
         $ventas[] = $row['total'];
+        $ticketsAvg[] = round($row['promedio'], 2);
     }
     $meses = array_reverse($meses);
     $ventas = array_reverse($ventas);
+    $ticketsAvg = array_reverse($ticketsAvg);
 
-    // --- 3. TOP 5 PRODUCTOS VENDIDOS ---
+    // --- 3. DATOS CONVERSIÓN CUPONES (Dona) ---
+    $sqlCupones = "SELECT COUNT(*) as con_cupon FROM kaiexper_perpetualife.pedidos WHERE cupon IS NOT NULL AND cupon != ''";
+    $conCupon = $conn->query($sqlCupones)->fetch_assoc()['con_cupon'] ?? 0;
+    $sinCupon = max(0, $totalPedidos - $conCupon);
+
+    // --- 4. TOP 5 PRODUCTOS VENDIDOS ---
     $sqlTopProd = "SELECT p.nombre, SUM(dp.cantidad) as cantidad_total 
                    FROM kaiexper_perpetualife.detalles_pedido dp
                    JOIN kaiexper_perpetualife.productos p ON dp.producto_id = p.id
@@ -48,8 +61,7 @@ try {
                    ORDER BY cantidad_total DESC LIMIT 5";
     $resTopProd = $conn->query($sqlTopProd);
 
-    // --- 4. NUEVO: TOP 5 ESTADOS CON MÁS VENTAS ---
-    // Agrupamos por el nuevo campo 'estado' de la tabla clientes
+    // --- 5. TOP 5 ESTADOS CON MÁS VENTAS ---
     $sqlTopEstados = "SELECT c.estado, COUNT(p.id) as total_compras, SUM(p.total) as monto_total
                       FROM kaiexper_perpetualife.clientes c
                       JOIN kaiexper_perpetualife.pedidos p ON c.id = p.cliente_id
@@ -58,7 +70,7 @@ try {
                       ORDER BY total_compras DESC LIMIT 5";
     $resTopEstados = $conn->query($sqlTopEstados);
 
-    // --- 5. TOP 5 CLIENTES (VIP) ---
+    // --- 6. TOP 5 CLIENTES (VIP) ---
     $sqlTopClient = "SELECT c.nombre, SUM(p.total) as gastado, COUNT(p.id) as compras
                      FROM kaiexper_perpetualife.clientes c
                      JOIN kaiexper_perpetualife.pedidos p ON c.id = p.cliente_id
@@ -67,7 +79,7 @@ try {
                      ORDER BY gastado DESC LIMIT 5";
     $resTopClient = $conn->query($sqlTopClient);
 
-    // --- 6. LISTADO DE PEDIDOS RECIENTES ---
+    // --- 7. LISTADO DE PEDIDOS RECIENTES ---
     $queryRecientes = "SELECT p.id, p.fecha, p.total, p.estado, c.nombre 
                        FROM kaiexper_perpetualife.pedidos p
                        LEFT JOIN kaiexper_perpetualife.clientes c ON p.cliente_id = c.id
@@ -168,6 +180,27 @@ try {
             </div>
         </header>
 
+        <?php if($resStockBajo && $resStockBajo->num_rows > 0): ?>
+        <div class="mb-8 bg-red-50 border-l-8 border-red-500 p-6 rounded-2xl shadow-sm flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="bg-red-100 p-3 rounded-full text-red-600 animate-pulse">
+                    <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h4 class="text-red-800 font-black uppercase text-sm tracking-widest">Atención: Inventario Crítico</h4>
+                    <p class="text-red-600 text-xs font-medium">Hay <?php echo $resStockBajo->num_rows; ?> productos que están a punto de agotarse.</p>
+                </div>
+            </div>
+            <div class="hidden md:flex gap-2 overflow-x-auto max-w-md">
+                <?php while($item = $resStockBajo->fetch_assoc()): ?>
+                    <span class="bg-white px-3 py-1 rounded-lg text-[10px] font-bold border border-red-200 text-slate-700 whitespace-nowrap">
+                        <?php echo $item['nombre']; ?>: <span class="text-red-600"><?php echo $item['stock']; ?></span>
+                    </span>
+                <?php endwhile; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div class="bg-gradient-to-r from-blue-600 to-cyan-500 p-6 rounded-2xl shadow-lg text-white">
                 <div class="flex justify-between items-start">
@@ -198,19 +231,37 @@ try {
             </div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-            
-            <div class="lg:col-span-2 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
                 <h3 class="font-bold text-lg text-slate-700 mb-4 flex items-center gap-2">
-                    <i data-lucide="bar-chart-2" class="text-cyan-500 w-5 h-5"></i> Ventas Mensuales (Últimos 6 meses)
+                    <i data-lucide="bar-chart-2" class="text-cyan-500 w-5 h-5"></i> Ventas Mensuales ($)
                 </h3>
-                <div class="relative h-72 w-full">
+                <div class="relative h-64 w-full">
                     <canvas id="salesChart"></canvas>
                 </div>
             </div>
+            <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+                <h3 class="font-bold text-lg text-slate-700 mb-4 flex items-center gap-2">
+                    <i data-lucide="trending-up" class="text-blue-500 w-5 h-5"></i> Ticket Promedio ($)
+                </h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="avgTicketChart"></canvas>
+                </div>
+            </div>
+        </div>
 
-            <div class="space-y-8">
-                <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+            <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+                <h3 class="font-bold text-lg text-slate-700 mb-4 flex items-center gap-2">
+                    <i data-lucide="ticket" class="text-purple-500 w-5 h-5"></i> Uso de Cupones
+                </h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="couponChart"></canvas>
+                </div>
+            </div>
+
+            <div class="space-y-8 lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-8 space-y-0">
+                <div class="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
                     <h3 class="font-bold text-lg text-slate-700 mb-4 flex items-center gap-2">
                         <i data-lucide="star" class="text-yellow-500 w-5 h-5"></i> Top Productos
                     </h3>
@@ -228,9 +279,9 @@ try {
                     </div>
                 </div>
 
-                <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+                <div class="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
                     <h3 class="font-bold text-lg text-slate-700 mb-4 flex items-center gap-2">
-                        <i data-lucide="map-pin" class="text-emerald-500 w-5 h-5"></i> Top Estados (Ventas)
+                        <i data-lucide="map-pin" class="text-emerald-500 w-5 h-5"></i> Top Estados
                     </h3>
                     <div class="space-y-4">
                         <?php if($resTopEstados && $resTopEstados->num_rows > 0): ?>
@@ -324,39 +375,88 @@ try {
     <script>
         lucide.createIcons();
 
-        const ctx = document.getElementById('salesChart');
-        const meses = <?php echo json_encode($meses); ?>;
-        const ventas = <?php echo json_encode($ventas); ?>;
-
-        if(ctx){
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: meses,
-                    datasets: [{
-                        label: 'Ventas ($)',
-                        data: ventas,
-                        borderColor: '#06b6d4',
-                        backgroundColor: 'rgba(6, 182, 212, 0.1)',
-                        borderWidth: 3,
-                        pointBackgroundColor: '#fff',
-                        pointBorderColor: '#06b6d4',
-                        pointRadius: 6,
-                        tension: 0.4,
-                        fill: true
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { beginAtZero: true, grid: { borderDash: [2, 4], color: '#e2e8f0' } },
-                        x: { grid: { display: false } }
-                    }
+        // 1. Gráfica de Ventas
+        const salesCtx = document.getElementById('salesChart');
+        new Chart(salesCtx, {
+            type: 'line',
+            data: {
+                labels: <?php echo json_encode($meses); ?>,
+                datasets: [{
+                    label: 'Ventas ($)',
+                    data: <?php echo json_encode($ventas); ?>,
+                    borderColor: '#06b6d4',
+                    backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                    borderWidth: 3,
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: '#06b6d4',
+                    pointRadius: 4,
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { borderDash: [2, 4], color: '#e2e8f0' } },
+                    x: { grid: { display: false } }
                 }
-            });
-        }
+            }
+        });
+
+        // 2. Gráfica de Ticket Promedio
+        const avgCtx = document.getElementById('avgTicketChart');
+        new Chart(avgCtx, {
+            type: 'line',
+            data: {
+                labels: <?php echo json_encode($meses); ?>,
+                datasets: [{
+                    label: 'Ticket Promedio ($)',
+                    data: <?php echo json_encode($ticketsAvg); ?>,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 3,
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: '#3b82f6',
+                    pointRadius: 4,
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { borderDash: [2, 4], color: '#e2e8f0' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+
+        // 3. Gráfica de Cupones (Dona)
+        const couponCtx = document.getElementById('couponChart');
+        new Chart(couponCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Con Cupón', 'Sin Cupón'],
+                datasets: [{
+                    data: [<?php echo $conCupon; ?>, <?php echo $sinCupon; ?>],
+                    backgroundColor: ['#a855f7', '#e2e8f0'],
+                    hoverOffset: 4,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '70%',
+                plugins: {
+                    legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20 } }
+                }
+            }
+        });
     </script>
 </body>
 </html>
