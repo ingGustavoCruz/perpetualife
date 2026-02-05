@@ -69,6 +69,8 @@ try {
             <a href="index.php" class="flex items-center gap-3 text-cyan-700 font-bold bg-cyan-50 p-3 rounded-xl border border-cyan-100">
                 <i data-lucide="layout-dashboard"></i> Dashboard
             </a>
+            <a href="pedidos.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
+                <i data-lucide="shopping-bag"></i> Pedidos</a>
             <a href="productos.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
                 <i data-lucide="package"></i> Productos
             </a>
