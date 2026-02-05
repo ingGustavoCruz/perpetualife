@@ -40,7 +40,7 @@ if ($resultado && $resultado->num_rows > 0) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Perpetua Life | Store Elite</title>
-    <link rel="icon" type="image/png" href="imagenes/KAI_NG.png">
+    <link rel="icon" type="image/png" href="imagenes/monito01.png">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -109,6 +109,7 @@ if ($resultado && $resultado->num_rows > 0) {
                         yourEmail: 'Tu Correo Registrado', sendLink: 'Enviar Enlace', 
                         cancel: 'Cancelar y Volver',
                         loginError: 'Error de conexión',
+                        terms: 'Términos y Condiciones', privacy: 'Política de Privacidad',
                         welcomeUser: '¡Bienvenido '
                     },
                     en: { 
@@ -131,6 +132,7 @@ if ($resultado && $resultado->num_rows > 0) {
                         yourEmail: 'Your Registered Email', sendLink: 'Send Link', 
                         cancel: 'Cancel and Return',
                         loginError: 'Connection error',
+                        terms: 'Terms & Conditions', privacy: 'Privacy Policy',
                         welcomeUser: 'Welcome '
                     }
                 },
@@ -544,9 +546,17 @@ if ($resultado && $resultado->num_rows > 0) {
         </div>
     </template>
 
-    <footer class="py-12 border-t border-perpetua-blue/10 flex flex-col items-center justify-center bg-white dark:bg-gray-900 transition-colors">
-        <span class="text-[10px] font-medium tracking-[0.4em] text-gray-400 mb-6 uppercase" x-text="t[lang].powered"></span>
-        <img src="imagenes/KAI_NA.png" alt="KAI" class="h-10 object-contain dark:invert opacity-80">
+    <footer class="py-12 border-t border-perpetua-blue/10 flex flex-col items-center justify-center bg-white dark:bg-gray-900 transition-colors gap-6">
+    
+        <div class="flex flex-wrap justify-center gap-6 md:gap-10">
+            <a href="terminos.php" class="text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-perpetua-blue dark:hover:text-perpetua-aqua transition-colors" x-text="t[lang].terms || 'Términos'"></a>
+            <a href="privacidad.php" class="text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-perpetua-blue dark:hover:text-perpetua-aqua transition-colors" x-text="t[lang].privacy || 'Privacidad'"></a>
+        </div>
+
+        <div class="flex flex-col items-center">
+            <span class="text-[10px] font-medium tracking-[0.4em] text-gray-400 mb-4 uppercase" x-text="t[lang].powered"></span>
+            <img src="imagenes/KAI_NA.png" alt="KAI" class="h-10 object-contain dark:invert opacity-80">
+        </div>
     </footer>
 
     <script>window.addEventListener('load', () => lucide.createIcons());</script>
