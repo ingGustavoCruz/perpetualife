@@ -1,7 +1,7 @@
 <?php
 /**
  * admin/index.php
- * Dashboard PRO: KPIs + Gráficas (Chart.js) + Top Listas
+ * Dashboard PRO: KPIs + Gráficas + Top Listas (Productos, Clientes y Estados)
  */
 
 require_once 'verificar_sesion.php';
@@ -9,41 +9,34 @@ require_once '../api/conexion.php';
 
 try {
     // --- 1. KPIS GENERALES ---
-    // Ingresos reales (Completados/Pagados)
     $sqlKPI1 = "SELECT SUM(total) as total_ventas FROM kaiexper_perpetualife.pedidos WHERE estado IN ('COMPLETADO', 'PAGADO')";
     $resKPI1 = $conn->query($sqlKPI1);
     $totalIngresos = $resKPI1->fetch_assoc()['total_ventas'] ?? 0;
 
-    // Total Pedidos
     $sqlKPI2 = "SELECT COUNT(*) as num_pedidos FROM kaiexper_perpetualife.pedidos";
     $resKPI2 = $conn->query($sqlKPI2);
     $totalPedidos = $resKPI2->fetch_assoc()['num_pedidos'] ?? 0;
     
-    // Total Clientes
     $sqlKPI3 = "SELECT COUNT(*) as num_clientes FROM kaiexper_perpetualife.clientes";
     $resKPI3 = $conn->query($sqlKPI3);
     $totalClientes = $resKPI3->fetch_assoc()['num_clientes'] ?? 0;
 
-    // --- 2. DATOS PARA GRÁFICA: VENTAS POR MES (Últimos 6 meses) ---
-    // Nota: Usamos DATE_FORMAT para agrupar por Año-Mes
+    // --- 2. DATOS PARA GRÁFICA: VENTAS POR MES ---
     $sqlChart = "SELECT DATE_FORMAT(fecha, '%Y-%m') as mes, SUM(total) as total 
                  FROM kaiexper_perpetualife.pedidos 
                  WHERE estado IN ('COMPLETADO', 'PAGADO') 
                  GROUP BY mes 
-                 ORDER BY mes DESC LIMIT 6"; // Traemos los últimos 6 meses
+                 ORDER BY mes DESC LIMIT 6";
     $resChart = $conn->query($sqlChart);
     
     $meses = [];
     $ventas = [];
-    // Ojo: vienen desc (actual -> pasado), para la gráfica los invertimos después en JS o PHP
     while($row = $resChart->fetch_assoc()){
-        $meses[] = date('M Y', strtotime($row['mes'] . '-01')); // Ej: "Feb 2024"
+        $meses[] = date('M Y', strtotime($row['mes'] . '-01'));
         $ventas[] = $row['total'];
     }
-    // Invertir para que la gráfica vaya de izquierda (pasado) a derecha (presente)
     $meses = array_reverse($meses);
     $ventas = array_reverse($ventas);
-
 
     // --- 3. TOP 5 PRODUCTOS VENDIDOS ---
     $sqlTopProd = "SELECT p.nombre, SUM(dp.cantidad) as cantidad_total 
@@ -55,7 +48,17 @@ try {
                    ORDER BY cantidad_total DESC LIMIT 5";
     $resTopProd = $conn->query($sqlTopProd);
 
-    // --- 4. TOP 5 CLIENTES (VIP) ---
+    // --- 4. NUEVO: TOP 5 ESTADOS CON MÁS VENTAS ---
+    // Agrupamos por el nuevo campo 'estado' de la tabla clientes
+    $sqlTopEstados = "SELECT c.estado, COUNT(p.id) as total_compras, SUM(p.total) as monto_total
+                      FROM kaiexper_perpetualife.clientes c
+                      JOIN kaiexper_perpetualife.pedidos p ON c.id = p.cliente_id
+                      WHERE p.estado IN ('COMPLETADO', 'PAGADO') AND c.estado IS NOT NULL AND c.estado != ''
+                      GROUP BY c.estado
+                      ORDER BY total_compras DESC LIMIT 5";
+    $resTopEstados = $conn->query($sqlTopEstados);
+
+    // --- 5. TOP 5 CLIENTES (VIP) ---
     $sqlTopClient = "SELECT c.nombre, SUM(p.total) as gastado, COUNT(p.id) as compras
                      FROM kaiexper_perpetualife.clientes c
                      JOIN kaiexper_perpetualife.pedidos p ON c.id = p.cliente_id
@@ -64,8 +67,7 @@ try {
                      ORDER BY gastado DESC LIMIT 5";
     $resTopClient = $conn->query($sqlTopClient);
 
-
-    // --- 5. LISTADO DE PEDIDOS RECIENTES (Últimos 5) ---
+    // --- 6. LISTADO DE PEDIDOS RECIENTES ---
     $queryRecientes = "SELECT p.id, p.fecha, p.total, p.estado, c.nombre 
                        FROM kaiexper_perpetualife.pedidos p
                        LEFT JOIN kaiexper_perpetualife.clientes c ON p.cliente_id = c.id
@@ -83,7 +85,6 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard | Perpetualife</title>
     <link rel="icon" type="image/png" href="../imagenes/monito01.png">
-
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
@@ -101,12 +102,9 @@ try {
             <button @click="sidebarOpen = false" class="absolute top-4 right-4 text-slate-400 hover:text-slate-800 md:hidden">
                 <i data-lucide="x" class="w-6 h-6"></i>
             </button>
-
             <img src="../imagenes/Perpetua_Life.png" class="hidden lg:block w-40 object-contain mb-2">
             <img src="../imagenes/logoPerpetua.png" class="block lg:hidden w-12 object-contain mb-2">
-            
             <span class="text-cyan-600 font-black tracking-widest text-xl mt-1">ADMIN</span>
-            
             <p class="text-sm font-bold text-[#1e3a8a] mt-2 text-center">
                 Bienvenid@ <?php echo htmlspecialchars($_SESSION['admin_nombre']); ?>
             </p>
@@ -123,6 +121,9 @@ try {
             </a>
             <a href="cupones.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
                 <i data-lucide="ticket"></i> Cupones
+            </a>
+            <a href="envios.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
+                <i data-lucide="truck"></i> Costos de Envío
             </a>
             <a href="clientes.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
                 <i data-lucide="users"></i> Clientes
@@ -208,31 +209,49 @@ try {
                 </div>
             </div>
 
-            <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
-                <h3 class="font-bold text-lg text-slate-700 mb-4 flex items-center gap-2">
-                    <i data-lucide="star" class="text-yellow-500 w-5 h-5"></i> Top Productos
-                </h3>
-                <div class="space-y-4">
-                    <?php if($resTopProd && $resTopProd->num_rows > 0): ?>
-                        <?php while($prod = $resTopProd->fetch_assoc()): ?>
-                        <div class="flex items-center justify-between border-b border-slate-50 pb-2 last:border-0">
-                            <span class="text-sm font-medium text-slate-600 truncate w-2/3" title="<?php echo $prod['nombre']; ?>">
-                                <?php echo $prod['nombre']; ?>
-                            </span>
-                            <span class="text-xs font-bold bg-cyan-50 text-cyan-700 px-2 py-1 rounded-md">
-                                <?php echo $prod['cantidad_total']; ?> unds.
-                            </span>
-                        </div>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <p class="text-xs text-slate-400 italic">No hay datos de ventas aún.</p>
-                    <?php endif; ?>
+            <div class="space-y-8">
+                <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+                    <h3 class="font-bold text-lg text-slate-700 mb-4 flex items-center gap-2">
+                        <i data-lucide="star" class="text-yellow-500 w-5 h-5"></i> Top Productos
+                    </h3>
+                    <div class="space-y-4">
+                        <?php if($resTopProd && $resTopProd->num_rows > 0): ?>
+                            <?php while($prod = $resTopProd->fetch_assoc()): ?>
+                            <div class="flex items-center justify-between border-b border-slate-50 pb-2 last:border-0">
+                                <span class="text-sm font-medium text-slate-600 truncate w-2/3"><?php echo $prod['nombre']; ?></span>
+                                <span class="text-xs font-bold bg-cyan-50 text-cyan-700 px-2 py-1 rounded-md"><?php echo $prod['cantidad_total']; ?> unds.</span>
+                            </div>
+                            <?php endwhile; ?>
+                        <?php else: ?>
+                            <p class="text-xs text-slate-400 italic">No hay datos aún.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
+                    <h3 class="font-bold text-lg text-slate-700 mb-4 flex items-center gap-2">
+                        <i data-lucide="map-pin" class="text-emerald-500 w-5 h-5"></i> Top Estados (Ventas)
+                    </h3>
+                    <div class="space-y-4">
+                        <?php if($resTopEstados && $resTopEstados->num_rows > 0): ?>
+                            <?php while($edo = $resTopEstados->fetch_assoc()): ?>
+                            <div class="flex items-center justify-between border-b border-slate-50 pb-2 last:border-0">
+                                <span class="text-sm font-medium text-slate-600 truncate w-2/3"><?php echo $edo['estado']; ?></span>
+                                <div class="text-right">
+                                    <span class="block text-xs font-bold text-emerald-700"><?php echo $edo['total_compras']; ?> ventas</span>
+                                    <span class="block text-[10px] text-slate-400">$<?php echo number_format($edo['monto_total'], 0); ?></span>
+                                </div>
+                            </div>
+                            <?php endwhile; ?>
+                        <?php else: ?>
+                            <p class="text-xs text-slate-400 italic">Esperando primeras ventas...</p>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            
             <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
                 <h3 class="font-bold text-lg text-slate-700 mb-4 flex items-center gap-2">
                     <i data-lucide="crown" class="text-purple-500 w-5 h-5"></i> Clientes VIP
@@ -299,18 +318,13 @@ try {
                     </table>
                 </div>
             </div>
-
         </div>
-
     </main>
 
     <script>
         lucide.createIcons();
 
-        // --- CONFIGURACIÓN CHART.JS ---
         const ctx = document.getElementById('salesChart');
-        
-        // Pasamos los datos de PHP a JS de forma segura
         const meses = <?php echo json_encode($meses); ?>;
         const ventas = <?php echo json_encode($ventas); ?>;
 
@@ -322,30 +336,23 @@ try {
                     datasets: [{
                         label: 'Ventas ($)',
                         data: ventas,
-                        borderColor: '#06b6d4', // Cyan-500
+                        borderColor: '#06b6d4',
                         backgroundColor: 'rgba(6, 182, 212, 0.1)',
                         borderWidth: 3,
                         pointBackgroundColor: '#fff',
                         pointBorderColor: '#06b6d4',
                         pointRadius: 6,
-                        tension: 0.4, // Curva suave
+                        tension: 0.4,
                         fill: true
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false } // Ocultar leyenda fea
-                    },
+                    plugins: { legend: { display: false } },
                     scales: {
-                        y: {
-                            beginAtZero: true,
-                            grid: { borderDash: [2, 4], color: '#e2e8f0' }
-                        },
-                        x: {
-                            grid: { display: false }
-                        }
+                        y: { beginAtZero: true, grid: { borderDash: [2, 4], color: '#e2e8f0' } },
+                        x: { grid: { display: false } }
                     }
                 }
             });

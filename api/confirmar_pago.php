@@ -119,6 +119,7 @@ try {
     $nombre = $conn->real_escape_string($cliente['nombre']);
     $telefono = $conn->real_escape_string($cliente['telefono']);
     $direccion = $conn->real_escape_string($cliente['direccion']);
+    $estadoCliente = $conn->real_escape_string($cliente['estado'] ?? '');
     
     $check = $conn->query("SELECT id FROM kaiexper_perpetualife.clientes WHERE email = '$email'");
     
@@ -128,7 +129,7 @@ try {
         
         if ($crearCuenta && !empty($newPassword)) {
             $passHash = password_hash($newPassword, PASSWORD_DEFAULT);
-            $conn->query("UPDATE kaiexper_perpetualife.clientes SET nombre='$nombre', telefono='$telefono', direccion='$direccion', password='$passHash' WHERE id=$cliente_id");
+            $conn->query("UPDATE kaiexper_perpetualife.clientes SET nombre='$nombre', telefono='$telefono', estado='$estadoCliente', direccion='$direccion', password='$passHash' WHERE id=$cliente_id");
         } else {
             $conn->query("UPDATE kaiexper_perpetualife.clientes SET nombre='$nombre', telefono='$telefono', direccion='$direccion' WHERE id=$cliente_id");
         }
@@ -137,8 +138,8 @@ try {
         if ($crearCuenta && !empty($newPassword)) {
             $passHash = password_hash($newPassword, PASSWORD_DEFAULT);
         }
-        $stmt = $conn->prepare("INSERT INTO kaiexper_perpetualife.clientes (nombre, email, telefono, direccion, password, fecha_registro) VALUES (?, ?, ?, ?, ?, NOW())");
-        $stmt->bind_param("sssss", $nombre, $email, $telefono, $direccion, $passHash);
+        $stmt = $conn->prepare("INSERT INTO kaiexper_perpetualife.clientes (nombre, email, telefono, direccion, estado, password, fecha_registro) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+        $stmt->bind_param("ssssss", $nombre, $email, $telefono, $direccion, $estadoCliente, $passHash);
         $stmt->execute();
         $cliente_id = $conn->insert_id;
     }
