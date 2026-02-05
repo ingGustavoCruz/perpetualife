@@ -1,7 +1,7 @@
 <?php
 /**
  * completarCompra.php - Perpetualife
- * Checkout Final: Persistencia + Cupones + UX (Ocultar Registro) + Limpieza de Formularios
+ * Checkout Final: Persistencia + Cupones + Envío Dinámico + UX (Sin eliminar nada)
  */
 require_once 'api/conexion.php'; 
 ?>
@@ -36,12 +36,13 @@ require_once 'api/conexion.php';
                 lang: localStorage.getItem('lang') || 'es',
                 cart: JSON.parse(localStorage.getItem('cart')) || [],
                 
-                cliente: { nombre: '', email: '', telefono: '', direccion: '' },
+                cliente: { nombre: '', email: '', telefono: '', direccion: '', estado: '' }, // Agregado 'estado'
                 
-                // NUEVO: Bandera para saber si el usuario ya está autenticado
+                // Lista de Estados para el Selector
+                estadosMx: ["Aguascalientes", "Baja California", "Baja California Sur", "Campeche", "Chiapas", "Chihuahua", "Ciudad de México", "Coahuila", "Colima", "Durango", "Estado de México", "Guanajuato", "Guerrero", "Hidalgo", "Jalisco", "Michoacán", "Morelos", "Nayarit", "Nuevo León", "Oaxaca", "Puebla", "Querétaro", "Quintana Roo", "San Luis Potosí", "Sinaloa", "Sonora", "Tabasco", "Tamaulipas", "Tlaxcala", "Veracruz", "Yucatán", "Zacatecas"],
+
                 userLoggedIn: false, 
 
-                // Login Variables
                 showLoginModal: false,
                 loginView: 'login',
                 loginData: { email: '', password: '' },
@@ -49,19 +50,18 @@ require_once 'api/conexion.php';
                 recEmail: '',
                 recMsg: '',
                 
-                // Registro Variables
                 crearCuenta: false,
                 newAccount: { password: '', confirm: '' },
 
-                // Variables para Cupones
                 couponCode: '',
                 discount: 0,
                 couponApplied: false,
                 couponMsg: '',
+                shippingFree: false, 
+                shippingCost: 150, // Inicializado con Zona Local
 
                 isProcessing: false,
 
-                // TRADUCCIONES
                 t: {
                     es: {
                         back: 'Volver a la tienda',
@@ -74,6 +74,7 @@ require_once 'api/conexion.php';
                         yourEmail: 'Tu Correo Registrado', sendLink: 'Enviar Enlace', cancel: 'Cancelar y Volver',
                         shippingTitle: 'Datos de Envío',
                         name: 'Nombre Completo', phone: 'Teléfono', address: 'Dirección de Entrega',
+                        state: 'Estado / Entidad', // Agregado
                         createAccount: 'Crear una cuenta para futuras compras',
                         confirmPass: 'Confirmar Contraseña',
                         passMismatch: 'Las contraseñas no coinciden',
@@ -100,6 +101,7 @@ require_once 'api/conexion.php';
                         yourEmail: 'Your Registered Email', sendLink: 'Send Link', cancel: 'Cancel',
                         shippingTitle: 'Shipping Details',
                         name: 'Full Name', phone: 'Phone Number', address: 'Shipping Address',
+                        state: 'State / Province', // Agregado
                         createAccount: 'Create an account for future purchases',
                         confirmPass: 'Confirm Password',
                         passMismatch: 'Passwords do not match',
@@ -123,8 +125,6 @@ require_once 'api/conexion.php';
                         window.location.href = 'index.php';
                         return;
                     }
-                    
-                    // Persistencia de Sesión
                     const storedUser = localStorage.getItem('cliente_perpetua');
                     if (storedUser) {
                         const u = JSON.parse(storedUser);
@@ -134,9 +134,23 @@ require_once 'api/conexion.php';
                         this.cliente.direccion = u.direccion || '';
                         this.userLoggedIn = true;
                     }
-
                     lucide.createIcons();
                     this.renderPayPal();
+                },
+
+                // Nueva función para envío dinámico
+                updateShipping() {
+                    if(!this.cliente.estado) return;
+                    fetch('api/get_shipping.php', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ estado: this.cliente.estado })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        this.shippingCost = parseFloat(data.costo);
+                        this.renderPayPal(); 
+                    });
                 },
 
                 switchLang() { 
@@ -144,18 +158,14 @@ require_once 'api/conexion.php';
                     localStorage.setItem('lang', this.lang); 
                 },
 
-                // --- NUEVA FUNCIÓN PARA LIMPIAR FORMULARIOS ---
                 resetForms() {
                     this.showLoginModal = false;
-                    // Limpiamos datos sensibles y errores
                     this.loginData = { email: '', password: '' };
                     this.recEmail = '';
                     this.recMsg = '';
                     this.loginError = '';
-                    // Regresar a la vista inicial
                     this.loginView = 'login';
                 },
-                // ----------------------------------------------
 
                 loginCliente() {
                     this.loginError = '';
@@ -171,22 +181,17 @@ require_once 'api/conexion.php';
                             this.cliente.telefono = data.datos.telefono;
                             this.cliente.direccion = data.datos.direccion;
                             this.cliente.email = this.loginData.email; 
-                            
                             localStorage.setItem('cliente_perpetua', JSON.stringify({
                                 nombre: data.datos.nombre,
                                 email: this.loginData.email,
                                 telefono: data.datos.telefono,
                                 direccion: data.datos.direccion
                             }));
-
                             this.userLoggedIn = true;
                             this.crearCuenta = false;
-
-                            this.resetForms(); // Usamos resetForms para cerrar limpio
+                            this.resetForms(); 
                             alert(this.t[this.lang].welcomeUser);
-                        } else {
-                            this.loginError = data.message;
-                        }
+                        } else { this.loginError = data.message; }
                     })
                     .catch(err => { this.loginError = "Connection Error"; });
                 },
@@ -210,26 +215,20 @@ require_once 'api/conexion.php';
                 applyCoupon() {
                     this.couponMsg = '';
                     if(!this.couponCode) return;
-
                     fetch('api/validar_cupon.php', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ codigo: this.couponCode })
+                        body: JSON.stringify({ codigo: this.couponCode, total: this.getSubtotal() })
                     })
                     .then(res => res.json())
                     .then(data => {
                         if (data.valid) {
-                            let subtotal = this.getSubtotal();
-                            if (data.tipo === 'porcentaje') {
-                                this.discount = subtotal * (data.valor / 100);
-                            } else {
-                                this.discount = data.valor;
-                            }
+                            this.discount = parseFloat(data.data.descuento_aplicado);
+                            this.shippingFree = (data.data.tipo_oferta === 'envio' || data.data.tipo_oferta === 'ambos');
                             this.couponApplied = true;
                             this.couponMsg = data.msg;
                         } else {
-                            this.discount = 0;
-                            this.couponApplied = false;
+                            this.discount = 0; this.shippingFree = false; this.couponApplied = false;
                             this.couponMsg = data.msg; 
                         }
                         this.renderPayPal(); 
@@ -238,17 +237,18 @@ require_once 'api/conexion.php';
 
                 procesarImagen(img) {
                     if (!img) return 'https://via.placeholder.com/150';
-                    if (img.includes('http')) return img;
-                    if (img.includes('imgProd/')) return img;
-                    return 'imgProd/' + img;
+                    if (img.includes('http') || img.includes('imgProd/')) return img;
+                    return 'admin/imgProd/' + img; // Ruta corregida
                 },
 
                 getSubtotal() {
                     return this.cart.reduce((s, i) => s + (i.precio * i.qty), 0);
                 },
 
+                // Lógica de suma corregida
                 getTotal() {
-                    let total = this.getSubtotal() - this.discount;
+                    let envioActual = this.shippingFree ? 0 : this.shippingCost;
+                    let total = (this.getSubtotal() - this.discount) + envioActual;
                     return total > 0 ? total.toFixed(2) : "0.00";
                 },
 
@@ -256,7 +256,8 @@ require_once 'api/conexion.php';
                     let basicos = this.cliente.nombre.length > 2 && 
                                   this.cliente.email.includes('@') && 
                                   this.cliente.telefono.length >= 10 && 
-                                  this.cliente.direccion.length > 5;
+                                  this.cliente.direccion.length > 5 &&
+                                  this.cliente.estado !== ''; // Estado obligatorio
                     
                     let registro = true;
                     if (!this.userLoggedIn && this.crearCuenta) {
@@ -269,7 +270,6 @@ require_once 'api/conexion.php';
                 renderPayPal() {
                     const container = document.getElementById('paypal-button-container');
                     if(container) container.innerHTML = '';
-
                     paypal.Buttons({
                         style: { layout: 'vertical', color: 'blue', shape: 'pill', label: 'pay' },
                         onClick: (data, actions) => {
@@ -286,7 +286,6 @@ require_once 'api/conexion.php';
                             return actions.order.capture().then((details) => {
                                 let payload = {
                                     orderID: data.orderID,
-                                    payerID: details.payer.payer_id,
                                     cart: this.cart,
                                     total: this.getTotal(),
                                     cliente: this.cliente,
@@ -327,7 +326,6 @@ require_once 'api/conexion.php';
 
     <div x-show="showLoginModal" x-cloak class="fixed inset-0 z-[200] flex items-center justify-center p-4">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="resetForms()"></div>
-        
         <div x-show="showLoginModal" x-transition class="relative bg-white dark:bg-gray-800 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 dark:border-gray-700">
             <button @click="resetForms()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-6 h-6"></i></button>
 
@@ -412,6 +410,17 @@ require_once 'api/conexion.php';
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].email"></label>
                             <input type="email" x-model="cliente.email" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
                         </div>
+
+                        <div class="md:col-span-2 space-y-2">
+                            <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].state"></label>
+                            <select x-model="cliente.estado" @change="updateShipping()" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border border-gray-200 focus:ring-2 focus:ring-perpetua-aqua outline-none cursor-pointer">
+                                <option value="" disabled selected>Selecciona tu Estado</option>
+                                <template x-for="edo in estadosMx" :key="edo">
+                                    <option :value="edo" x-text="edo"></option>
+                                </template>
+                            </select>
+                        </div>
+
                         <div class="md:col-span-2 space-y-2">
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].address"></label>
                             <textarea x-model="cliente.direccion" rows="3" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all"></textarea>
@@ -483,11 +492,17 @@ require_once 'api/conexion.php';
 
                         <div class="flex justify-between text-gray-400 font-bold text-[10px] uppercase">
                             <span x-text="t[lang].shipping"></span>
-                            <span class="text-green-500 font-bold" x-text="t[lang].free"></span>
+                            <template x-if="shippingFree">
+                                <span class="text-green-500 font-bold" x-text="t[lang].free"></span>
+                            </template>
+                            <template x-if="!shippingFree">
+                                <span class="text-slate-600 dark:text-slate-300" x-text="'$' + parseFloat(shippingCost).toFixed(2)"></span>
+                            </template>
                         </div>
+
                         <div class="flex justify-between items-end pt-2">
                             <span class="font-black text-lg uppercase tracking-tighter" x-text="t[lang].total"></span>
-                            <span class="font-black text-2xl text-perpetua-blue dark:text-perpetua-aqua" x-text="'$' + totalPrice()"></span>
+                            <span class="font-black text-2xl text-perpetua-blue dark:text-perpetua-aqua" x-text="'$' + getTotal()"></span>
                         </div>
                     </div>
                 </div>
