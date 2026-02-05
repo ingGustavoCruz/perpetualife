@@ -1,7 +1,7 @@
 <?php
 /**
  * admin/login.php
- * Versión Final: Formulario + Lógica de Validación + Logo Responsive (Doble Tamaño)
+ * Versión Final: Soporte de Roles + Prefijo BD + Validación Segura
  */
 session_start();
 
@@ -16,26 +16,29 @@ require_once '../api/conexion.php';
 
 $error = '';
 
-// 3. Procesar el formulario cuando se envía (POST)
+// 3. Procesar el formulario
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $user = $_POST['usuario'];
+    $email = $conn->real_escape_string($_POST['email']);
     $pass = $_POST['password'];
 
-    // Consulta a la BD
-    $stmt = $conn->prepare("SELECT id, password, nombre FROM kaiexper_perpetualife.usuarios_admin WHERE usuario = ? LIMIT 1");
-    $stmt->bind_param("s", $user);
+    // Consulta a la BD con prefijo explícito 'kaiexper_perpetualife'
+    // IMPORTANTE: Solicitamos también el campo 'rol'
+    $stmt = $conn->prepare("SELECT id, nombre, password, rol FROM kaiexper_perpetualife.admin_usuarios WHERE email = ? LIMIT 1");
+    $stmt->bind_param("s", $email);
     $stmt->execute();
     $result = $stmt->get_result();
 
     if ($user_data = $result->fetch_assoc()) {
         // Verificar contraseña encriptada
         if (password_verify($pass, $user_data['password'])) {
-            // Login Exitoso
+            
+            // --- INICIO DE SESIÓN EXITOSO ---
             $_SESSION['admin_id'] = $user_data['id'];
             $_SESSION['admin_nombre'] = $user_data['nombre'];
+            $_SESSION['admin_rol'] = $user_data['rol']; // <--- ¡VITAL PARA LOS PERMISOS!
             
-            // Actualizar fecha de último login
-            $conn->query("UPDATE kaiexper_perpetualife.usuarios_admin SET ultimo_login = NOW() WHERE id = " . $user_data['id']);
+            // Actualizar fecha de último login (Opcional, si tienes esa columna)
+            // $conn->query("UPDATE kaiexper_perpetualife.admin_usuarios SET ultimo_login = NOW() WHERE id = " . $user_data['id']);
             
             header("Location: index.php");
             exit;
@@ -43,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $error = "La contraseña es incorrecta.";
         }
     } else {
-        $error = "El usuario no existe.";
+        $error = "El correo no existe o no tiene acceso.";
     }
 }
 ?>
@@ -51,6 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login | Perpetualife Admin</title>
     <link rel="icon" type="image/png" href="../imagenes/monito01.png">
     
@@ -80,10 +84,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         <form action="" method="POST" class="space-y-5">
             <div>
-                <label class="text-[10px] font-black uppercase text-slate-400 ml-2">Usuario</label>
+                <label class="text-[10px] font-black uppercase text-slate-400 ml-2">Correo Electrónico</label>
                 <div class="relative">
-                    <i data-lucide="user" class="absolute left-4 top-4 w-5 h-5 text-slate-300"></i>
-                    <input type="text" name="usuario" required 
+                    <i data-lucide="mail" class="absolute left-4 top-4 w-5 h-5 text-slate-300"></i>
+                    <input type="email" name="email" required placeholder="admin@perpetualife.com"
                            class="w-full pl-12 pr-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 outline-none transition-all font-bold text-slate-700">
                 </div>
             </div>
@@ -91,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <label class="text-[10px] font-black uppercase text-slate-400 ml-2">Contraseña</label>
                 <div class="relative">
                     <i data-lucide="lock" class="absolute left-4 top-4 w-5 h-5 text-slate-300"></i>
-                    <input type="password" name="password" required 
+                    <input type="password" name="password" required placeholder="••••••••"
                            class="w-full pl-12 pr-5 py-4 rounded-2xl bg-slate-50 border border-slate-200 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 outline-none transition-all font-bold text-slate-700">
                 </div>
             </div>

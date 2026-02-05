@@ -1,26 +1,28 @@
 <?php
 /**
  * admin/index.php
- * Dashboard con Menú Hamburguesa (Responsive)
+ * Dashboard Sincronizado (MXN / COMPLETADO / PayPal ID) + Bienvenida Personalizada
  */
 
 require_once 'verificar_sesion.php';
 require_once '../api/conexion.php';
 
 try {
-    // KPIs
-    $sqlKPI1 = "SELECT SUM(total) as total_ventas FROM pedidos WHERE estado = 'PAGADO'";
+    // 1. KPI INGRESOS
+    $sqlKPI1 = "SELECT SUM(total) as total_ventas FROM pedidos WHERE estado = 'COMPLETADO'";
     $resKPI1 = $conn->query($sqlKPI1);
     $totalIngresos = $resKPI1->fetch_assoc()['total_ventas'] ?? 0;
 
+    // 2. KPI TOTAL PEDIDOS
     $sqlKPI2 = "SELECT COUNT(*) as num_pedidos FROM pedidos";
     $resKPI2 = $conn->query($sqlKPI2);
     $totalPedidos = $resKPI2->fetch_assoc()['num_pedidos'] ?? 0;
 
-    // Listado
-    $query = "SELECT p.id, p.fecha, p.total, p.moneda, p.estado, c.nombre, c.telefono, c.email 
-              FROM pedidos p
-              JOIN clientes c ON p.cliente_id = c.id
+    // 3. LISTADO
+    $query = "SELECT p.id, p.paypal_order_id, p.fecha, p.total, p.moneda, p.estado, 
+                     c.nombre, c.telefono, c.email 
+              FROM kaiexper_perpetualife.pedidos p
+              JOIN kaiexper_perpetualife.clientes c ON p.cliente_id = c.id
               ORDER BY p.fecha DESC";
     $resultado = $conn->query($query);
 
@@ -43,10 +45,7 @@ try {
 
 <body class="bg-slate-100 font-sans text-slate-900 h-screen flex overflow-hidden" x-data="{ sidebarOpen: false }">
 
-    <div x-show="sidebarOpen" 
-         @click="sidebarOpen = false"
-         x-transition.opacity
-         class="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm"></div>
+    <div x-show="sidebarOpen" @click="sidebarOpen = false" x-transition.opacity class="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm"></div>
 
     <aside class="fixed inset-y-0 left-0 z-50 w-64 bg-white text-slate-600 flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0 md:static flex-shrink-0 border-r border-slate-200 shadow-sm"
            :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'">
@@ -61,25 +60,36 @@ try {
             
             <span class="text-cyan-600 font-black tracking-widest text-xl mt-1">ADMIN</span>
             
+            <p class="text-sm font-bold text-[#1e3a8a] mt-2 text-center">
+                Bienvenid@ <?php echo htmlspecialchars($_SESSION['admin_nombre']); ?>
+            </p>
         </div>
         
         <nav class="flex-1 px-4 space-y-3 overflow-y-auto mt-6">
-            
             <a href="index.php" class="flex items-center gap-3 text-cyan-700 font-bold bg-cyan-50 p-3 rounded-xl border border-cyan-100">
                 <i data-lucide="layout-dashboard"></i> Dashboard
             </a>
-            
             <a href="productos.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
                 <i data-lucide="package"></i> Productos
             </a>
-            
             <a href="cupones.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
                 <i data-lucide="ticket"></i> Cupones
             </a>
-
             <a href="clientes.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
                 <i data-lucide="users"></i> Clientes
             </a>
+
+            <?php if (isset($_SESSION['admin_rol']) && $_SESSION['admin_rol'] === 'superadmin'): ?>
+                <div class="pt-4 mt-4 border-t border-slate-100">
+                    <p class="px-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Administración</p>
+                    <a href="usuarios.php" class="flex items-center gap-3 text-slate-500 hover:text-purple-600 transition p-3 rounded-xl hover:bg-purple-50 font-medium">
+                        <i data-lucide="shield"></i> Usuarios Staff
+                    </a>
+                    <a href="../api/log_errores.txt" target="_blank" class="flex items-center gap-3 text-slate-500 hover:text-orange-600 transition p-3 rounded-xl hover:bg-orange-50 font-medium">
+                        <i data-lucide="file-warning"></i> Bitácora (Logs)
+                    </a>
+                </div>
+            <?php endif; ?>
         </nav>
 
         <div class="p-4 border-t border-slate-100">
@@ -96,13 +106,11 @@ try {
                 <button @click="sidebarOpen = true" class="md:hidden p-2 bg-white rounded-xl shadow-sm text-slate-600 hover:text-cyan-600">
                     <i data-lucide="menu" class="w-6 h-6"></i>
                 </button>
-
                 <div>
                     <h2 class="text-2xl md:text-3xl font-black text-slate-800">Resumen</h2>
-                    <p class="text-slate-500 text-sm hidden md:block">Bienvenido al panel de control</p>
+                    <p class="text-slate-500 text-sm hidden md:block">Visión general de la tienda</p>
                 </div>
             </div>
-
             <div class="flex items-center gap-4 self-end md:self-auto">
                 <span class="bg-emerald-100 text-emerald-700 px-4 py-1 rounded-full text-xs font-bold uppercase flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> <span class="hidden sm:inline">Sistema</span> Online
@@ -114,36 +122,32 @@ try {
             <div class="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-cyan-500">
                 <div class="flex justify-between items-center">
                     <div>
-                        <p class="text-xs font-bold text-slate-400 uppercase">Ingresos Totales</p>
+                        <p class="text-xs font-bold text-slate-400 uppercase">Ingresos Totales (MXN)</p>
                         <p class="text-2xl font-black text-slate-800">$<?php echo number_format($totalIngresos, 2); ?></p>
                     </div>
-                    <div class="bg-cyan-50 p-3 rounded-lg text-cyan-600">
-                        <i data-lucide="dollar-sign"></i>
-                    </div>
+                    <div class="bg-cyan-50 p-3 rounded-lg text-cyan-600"><i data-lucide="dollar-sign"></i></div>
                 </div>
             </div>
             <div class="bg-white p-6 rounded-2xl shadow-sm border-l-4 border-purple-500">
                 <div class="flex justify-between items-center">
                     <div>
-                        <p class="text-xs font-bold text-slate-400 uppercase">Total Pedidos</p>
+                        <p class="text-xs font-bold text-slate-400 uppercase">Pedidos Totales</p>
                         <p class="text-2xl font-black text-slate-800"><?php echo $totalPedidos; ?></p>
                     </div>
-                    <div class="bg-purple-50 p-3 rounded-lg text-purple-600">
-                        <i data-lucide="shopping-bag"></i>
-                    </div>
+                    <div class="bg-purple-50 p-3 rounded-lg text-purple-600"><i data-lucide="shopping-bag"></i></div>
                 </div>
             </div>
         </div>
 
         <div class="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-slate-200">
             <div class="p-6 border-b border-slate-100">
-                <h3 class="font-bold text-lg text-slate-700">Últimos Movimientos</h3>
+                <h3 class="font-bold text-lg text-slate-700">Últimos Pedidos</h3>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left">
                     <thead class="bg-slate-50 border-b border-slate-200">
                         <tr>
-                            <th class="px-6 py-4 text-xs font-black uppercase text-slate-400">ID</th>
+                            <th class="px-6 py-4 text-xs font-black uppercase text-slate-400">Ref / ID</th>
                             <th class="px-6 py-4 text-xs font-black uppercase text-slate-400">Cliente</th>
                             <th class="px-6 py-4 text-xs font-black uppercase text-slate-400">Contacto</th>
                             <th class="px-6 py-4 text-xs font-black uppercase text-slate-400">Fecha</th>
@@ -155,7 +159,12 @@ try {
                         <?php if ($resultado && $resultado->num_rows > 0): ?>
                             <?php while($row = $resultado->fetch_assoc()): ?>
                             <tr class="hover:bg-slate-50 transition-colors group">
-                                <td class="px-6 py-4 font-bold text-slate-500">#<?php echo str_pad($row['id'], 5, "0", STR_PAD_LEFT); ?></td>
+                                <td class="px-6 py-4">
+                                    <div class="font-black text-slate-700">#<?php echo str_pad($row['id'], 5, "0", STR_PAD_LEFT); ?></div>
+                                    <div class="text-[10px] text-slate-400 font-mono mt-1" title="ID Transacción PayPal">
+                                        <?php echo $row['paypal_order_id'] ?? 'N/A'; ?>
+                                    </div>
+                                </td>
                                 <td class="px-6 py-4">
                                     <div class="font-bold text-slate-800"><?php echo $row['nombre']; ?></div>
                                     <div class="text-xs text-slate-400"><?php echo $row['email']; ?></div>
@@ -169,17 +178,20 @@ try {
                                 <td class="px-6 py-4 text-sm text-slate-500">
                                     <?php echo date('d/m/Y', strtotime($row['fecha'])); ?>
                                 </td>
-                                <td class="px-6 py-4 font-black text-slate-900">$<?php echo number_format($row['total'], 2); ?></td>
+                                <td class="px-6 py-4 font-black text-slate-900">
+                                    $<?php echo number_format($row['total'], 2); ?> 
+                                    <span class="text-[10px] text-slate-400 font-normal"><?php echo $row['moneda']; ?></span>
+                                </td>
                                 <td class="px-6 py-4">
                                     <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase 
-                                        <?php echo ($row['estado'] === 'PAGADO') ? 'bg-blue-100 text-blue-600' : 'bg-yellow-100 text-yellow-600'; ?>">
+                                        <?php echo ($row['estado'] === 'COMPLETADO') ? 'bg-emerald-100 text-emerald-600' : 'bg-yellow-100 text-yellow-600'; ?>">
                                         <?php echo $row['estado']; ?>
                                     </span>
                                 </td>
                             </tr>
                             <?php endwhile; ?>
                         <?php else: ?>
-                            <tr><td colspan="6" class="px-6 py-10 text-center text-slate-400 italic">Sin pedidos.</td></tr>
+                            <tr><td colspan="6" class="px-6 py-10 text-center text-slate-400 italic">No hay pedidos registrados.</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
