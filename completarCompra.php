@@ -267,6 +267,19 @@ require_once 'api/conexion.php';
                     return basicos && registro;
                 },
 
+                trackAbandonment() {
+                    if(!this.cliente.email.includes('@')) return;
+                    fetch('api/guardar_intento.php', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            email: this.cliente.email,
+                            nombre: this.cliente.nombre,
+                            cart: this.cart
+                        })
+                    });
+                }
+                
                 renderPayPal() {
                     const container = document.getElementById('paypal-button-container');
                     if(container) container.innerHTML = '';
@@ -334,7 +347,7 @@ require_once 'api/conexion.php';
                 <div class="space-y-4">
                     <div>
                         <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].email"></label>
-                        <input type="email" x-model="loginData.email" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
+                        <input type="email" x-model="loginData.email" @blur="trackAbandonment()" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
                     </div>
                     <div>
                         <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].pass"></label>
