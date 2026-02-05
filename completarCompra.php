@@ -1,7 +1,7 @@
 <?php
 /**
  * completarCompra.php - Perpetualife
- * Checkout Bilingüe (ES/EN) + Login Modal + PayPal
+ * Checkout Final: Persistencia + Cupones + UX (Ocultar Registro) + Limpieza de Formularios
  */
 require_once 'api/conexion.php'; 
 ?>
@@ -33,11 +33,14 @@ require_once 'api/conexion.php';
         function checkoutData() {
             return {
                 darkMode: localStorage.getItem('darkMode') === 'true',
-                lang: localStorage.getItem('lang') || 'es', // Cargar idioma
+                lang: localStorage.getItem('lang') || 'es',
                 cart: JSON.parse(localStorage.getItem('cart')) || [],
                 
                 cliente: { nombre: '', email: '', telefono: '', direccion: '' },
                 
+                // NUEVO: Bandera para saber si el usuario ya está autenticado
+                userLoggedIn: false, 
+
                 // Login Variables
                 showLoginModal: false,
                 loginView: 'login',
@@ -50,28 +53,30 @@ require_once 'api/conexion.php';
                 crearCuenta: false,
                 newAccount: { password: '', confirm: '' },
 
+                // Variables para Cupones
+                couponCode: '',
+                discount: 0,
+                couponApplied: false,
+                couponMsg: '',
+
                 isProcessing: false,
 
-                // TRADUCCIONES CHECKOUT
+                // TRADUCCIONES
                 t: {
                     es: {
                         back: 'Volver a la tienda',
-                        // Banner Login
                         clientQuestion: '¿Ya eres cliente?', 
                         clientDesc: 'Inicia sesión para cargar tus datos automáticamente.',
                         loginBtn: 'Iniciar Sesión',
-                        // Modal Login
                         welcome: 'Bienvenido', email: 'Correo Electrónico', pass: 'Contraseña',
                         forgot: '¿Olvidaste tu contraseña?', loginAction: 'Acceder y Cargar Datos',
                         recoverTitle: 'Recuperar Cuenta', recoverDesc: 'Ingresa tu correo para restablecer tu contraseña.',
                         yourEmail: 'Tu Correo Registrado', sendLink: 'Enviar Enlace', cancel: 'Cancelar y Volver',
-                        // Formulario Envío
                         shippingTitle: 'Datos de Envío',
                         name: 'Nombre Completo', phone: 'Teléfono', address: 'Dirección de Entrega',
                         createAccount: 'Crear una cuenta para futuras compras',
                         confirmPass: 'Confirmar Contraseña',
                         passMismatch: 'Las contraseñas no coinciden',
-                        // Resumen y Pago
                         paymentTitle: 'Método de Pago',
                         securePayment: 'Pago 100% Seguro Encriptado por PayPal',
                         yourOrder: 'Tu Pedido',
@@ -81,26 +86,23 @@ require_once 'api/conexion.php';
                         langBtn: 'English',
                         alertEmpty: 'Tu carrito está vacío',
                         alertData: 'Por favor, completa todos los datos obligatorios.',
-                        welcomeUser: '¡Bienvenido! Tus datos se han cargado.'
+                        welcomeUser: '¡Bienvenido! Tus datos se han cargado.',
+                        couponLabel: 'Código de Descuento', apply: 'Aplicar', discount: 'Descuento', invalidCoupon: 'Cupón no válido'
                     },
                     en: {
                         back: 'Back to store',
-                        // Banner Login
                         clientQuestion: 'Already a customer?', 
                         clientDesc: 'Login to load your data automatically.',
                         loginBtn: 'Login',
-                        // Modal Login
                         welcome: 'Welcome Back', email: 'Email Address', pass: 'Password',
                         forgot: 'Forgot password?', loginAction: 'Login & Load Data',
                         recoverTitle: 'Recover Account', recoverDesc: 'Enter your email to receive a reset link.',
                         yourEmail: 'Your Registered Email', sendLink: 'Send Link', cancel: 'Cancel',
-                        // Formulario Envío
                         shippingTitle: 'Shipping Details',
                         name: 'Full Name', phone: 'Phone Number', address: 'Shipping Address',
                         createAccount: 'Create an account for future purchases',
                         confirmPass: 'Confirm Password',
                         passMismatch: 'Passwords do not match',
-                        // Resumen y Pago
                         paymentTitle: 'Payment Method',
                         securePayment: '100% Secure Payment Encrypted by PayPal',
                         yourOrder: 'Your Order',
@@ -110,7 +112,8 @@ require_once 'api/conexion.php';
                         langBtn: 'Español',
                         alertEmpty: 'Your cart is empty',
                         alertData: 'Please complete all required fields.',
-                        welcomeUser: 'Welcome! Your data has been loaded.'
+                        welcomeUser: 'Welcome! Your data has been loaded.',
+                        couponLabel: 'Discount Code', apply: 'Apply', discount: 'Discount', invalidCoupon: 'Invalid coupon'
                     }
                 },
 
@@ -120,6 +123,18 @@ require_once 'api/conexion.php';
                         window.location.href = 'index.php';
                         return;
                     }
+                    
+                    // Persistencia de Sesión
+                    const storedUser = localStorage.getItem('cliente_perpetua');
+                    if (storedUser) {
+                        const u = JSON.parse(storedUser);
+                        this.cliente.nombre = u.nombre || '';
+                        this.cliente.email = u.email || '';
+                        this.cliente.telefono = u.telefono || '';
+                        this.cliente.direccion = u.direccion || '';
+                        this.userLoggedIn = true;
+                    }
+
                     lucide.createIcons();
                     this.renderPayPal();
                 },
@@ -128,6 +143,19 @@ require_once 'api/conexion.php';
                     this.lang = (this.lang === 'es' ? 'en' : 'es'); 
                     localStorage.setItem('lang', this.lang); 
                 },
+
+                // --- NUEVA FUNCIÓN PARA LIMPIAR FORMULARIOS ---
+                resetForms() {
+                    this.showLoginModal = false;
+                    // Limpiamos datos sensibles y errores
+                    this.loginData = { email: '', password: '' };
+                    this.recEmail = '';
+                    this.recMsg = '';
+                    this.loginError = '';
+                    // Regresar a la vista inicial
+                    this.loginView = 'login';
+                },
+                // ----------------------------------------------
 
                 loginCliente() {
                     this.loginError = '';
@@ -143,7 +171,18 @@ require_once 'api/conexion.php';
                             this.cliente.telefono = data.datos.telefono;
                             this.cliente.direccion = data.datos.direccion;
                             this.cliente.email = this.loginData.email; 
-                            this.showLoginModal = false;
+                            
+                            localStorage.setItem('cliente_perpetua', JSON.stringify({
+                                nombre: data.datos.nombre,
+                                email: this.loginData.email,
+                                telefono: data.datos.telefono,
+                                direccion: data.datos.direccion
+                            }));
+
+                            this.userLoggedIn = true;
+                            this.crearCuenta = false;
+
+                            this.resetForms(); // Usamos resetForms para cerrar limpio
                             alert(this.t[this.lang].welcomeUser);
                         } else {
                             this.loginError = data.message;
@@ -168,6 +207,35 @@ require_once 'api/conexion.php';
                     .catch(err => { this.recMsg = "Error sending request"; });
                 },
 
+                applyCoupon() {
+                    this.couponMsg = '';
+                    if(!this.couponCode) return;
+
+                    fetch('api/validar_cupon.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ codigo: this.couponCode })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.valid) {
+                            let subtotal = this.getSubtotal();
+                            if (data.tipo === 'porcentaje') {
+                                this.discount = subtotal * (data.valor / 100);
+                            } else {
+                                this.discount = data.valor;
+                            }
+                            this.couponApplied = true;
+                            this.couponMsg = data.msg;
+                        } else {
+                            this.discount = 0;
+                            this.couponApplied = false;
+                            this.couponMsg = data.msg; 
+                        }
+                        this.renderPayPal(); 
+                    });
+                },
+
                 procesarImagen(img) {
                     if (!img) return 'https://via.placeholder.com/150';
                     if (img.includes('http')) return img;
@@ -175,19 +243,33 @@ require_once 'api/conexion.php';
                     return 'imgProd/' + img;
                 },
 
-                totalPrice() { return this.cart.reduce((s, i) => s + (i.precio * i.qty), 0).toFixed(2); },
+                getSubtotal() {
+                    return this.cart.reduce((s, i) => s + (i.precio * i.qty), 0);
+                },
+
+                getTotal() {
+                    let total = this.getSubtotal() - this.discount;
+                    return total > 0 ? total.toFixed(2) : "0.00";
+                },
 
                 formValido() {
-                    let basicos = this.cliente.nombre.length > 2 && this.cliente.email.includes('@') && 
-                                  this.cliente.telefono.length >= 10 && this.cliente.direccion.length > 5;
+                    let basicos = this.cliente.nombre.length > 2 && 
+                                  this.cliente.email.includes('@') && 
+                                  this.cliente.telefono.length >= 10 && 
+                                  this.cliente.direccion.length > 5;
+                    
                     let registro = true;
-                    if (this.crearCuenta) {
-                        registro = this.newAccount.password.length >= 6 && (this.newAccount.password === this.newAccount.confirm);
+                    if (!this.userLoggedIn && this.crearCuenta) {
+                        registro = this.newAccount.password.length >= 6 && 
+                                   (this.newAccount.password === this.newAccount.confirm);
                     }
                     return basicos && registro;
                 },
 
                 renderPayPal() {
+                    const container = document.getElementById('paypal-button-container');
+                    if(container) container.innerHTML = '';
+
                     paypal.Buttons({
                         style: { layout: 'vertical', color: 'blue', shape: 'pill', label: 'pay' },
                         onClick: (data, actions) => {
@@ -197,7 +279,7 @@ require_once 'api/conexion.php';
                             }
                         },
                         createOrder: (data, actions) => {
-                            return actions.order.create({ purchase_units: [{ amount: { value: this.totalPrice() } }] });
+                            return actions.order.create({ purchase_units: [{ amount: { value: this.getTotal() } }] });
                         },
                         onApprove: (data, actions) => {
                             this.isProcessing = true;
@@ -206,10 +288,11 @@ require_once 'api/conexion.php';
                                     orderID: data.orderID,
                                     payerID: details.payer.payer_id,
                                     cart: this.cart,
-                                    total: this.totalPrice(),
+                                    total: this.getTotal(),
                                     cliente: this.cliente,
-                                    crear_cuenta: this.crearCuenta,
-                                    new_password: this.newAccount.password
+                                    crear_cuenta: !this.userLoggedIn && this.crearCuenta,
+                                    new_password: this.newAccount.password,
+                                    cupon: this.couponApplied ? this.couponCode : null
                                 };
                                 return fetch('api/confirmar_pago.php', {
                                     method: 'POST',
@@ -243,10 +326,10 @@ require_once 'api/conexion.php';
 <body class="min-h-screen transition-colors duration-500 bg-slate-50 dark:bg-gray-900 text-gray-900 dark:text-white font-sans">
 
     <div x-show="showLoginModal" x-cloak class="fixed inset-0 z-[200] flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showLoginModal = false; loginView='login'"></div>
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="resetForms()"></div>
         
         <div x-show="showLoginModal" x-transition class="relative bg-white dark:bg-gray-800 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 dark:border-gray-700">
-            <button @click="showLoginModal = false; loginView='login'" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-6 h-6"></i></button>
+            <button @click="resetForms()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-6 h-6"></i></button>
 
             <div x-show="loginView === 'login'">
                 <h3 class="text-2xl font-black text-center mb-6 uppercase text-perpetua-blue dark:text-perpetua-aqua" x-text="t[lang].welcome"></h3>
@@ -259,31 +342,24 @@ require_once 'api/conexion.php';
                         <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].pass"></label>
                         <input type="password" x-model="loginData.password" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
                     </div>
-                    
                     <div class="flex justify-end">
                         <button @click="loginView = 'recover'" class="text-xs font-bold text-gray-400 hover:text-perpetua-aqua underline" x-text="t[lang].forgot"></button>
                     </div>
-
                     <p x-show="loginError" x-text="loginError" class="text-center text-xs text-red-500 font-bold"></p>
-
                     <button @click="loginCliente()" class="w-full btn-gradient text-white py-3 rounded-xl font-bold uppercase tracking-widest shadow-lg" x-text="t[lang].loginAction"></button>
                 </div>
             </div>
-
+            
             <div x-show="loginView === 'recover'">
                 <h3 class="text-xl font-black text-center mb-2 uppercase text-gray-700 dark:text-white" x-text="t[lang].recoverTitle"></h3>
                 <p class="text-xs text-center text-gray-400 mb-6" x-text="t[lang].recoverDesc"></p>
-                
                 <div class="space-y-4">
                     <div>
                         <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].yourEmail"></label>
                         <input type="email" x-model="recEmail" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
                     </div>
-
                     <p x-show="recMsg" x-text="recMsg" class="text-center text-xs font-bold" :class="recMsg.includes('Error') || recMsg.includes('Invalid') ? 'text-red-500' : 'text-green-500'"></p>
-
                     <button @click="recoverPassword()" class="w-full bg-slate-900 text-white py-3 rounded-xl font-bold uppercase tracking-widest hover:bg-perpetua-aqua transition" x-text="t[lang].sendLink"></button>
-                    
                     <button @click="loginView = 'login'" class="w-full text-center text-xs font-bold text-gray-400 hover:text-gray-600 py-2" x-text="t[lang].cancel"></button>
                 </div>
             </div>
@@ -300,17 +376,14 @@ require_once 'api/conexion.php';
                 <button @click="switchLang()" class="px-3 py-1 rounded-full text-[10px] font-bold border-2 border-perpetua-blue text-perpetua-blue dark:text-perpetua-aqua transition-all">
                     <span x-text="t[lang].langBtn"></span>
                 </button>
-                
-                <img :src="darkMode ? 'imagenes/designWhite.png' : 'imagenes/Perpetua_Life.png'" 
-                     class="h-10 w-auto object-contain transition-all duration-500" alt="Logo Perpetualife">
+                <img :src="darkMode ? 'imagenes/designWhite.png' : 'imagenes/Perpetua_Life.png'" class="h-10 w-auto object-contain transition-all duration-500" alt="Logo Perpetualife">
             </div>
         </div>
 
-        <div class="mb-8 rounded-2xl border border-gray-200 bg-white p-4 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-sm" x-show="!cliente.nombre">
+        <div class="mb-8 rounded-2xl border border-gray-200 bg-white p-4 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-sm" 
+             x-show="!userLoggedIn">
             <div class="flex items-center gap-4">
-                <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-perpetua-blue">
-                    <i data-lucide="user" class="w-5 h-5"></i>
-                </div>
+                <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-perpetua-blue"><i data-lucide="user" class="w-5 h-5"></i></div>
                 <div>
                     <h4 class="font-bold text-gray-900 text-sm" x-text="t[lang].clientQuestion"></h4>
                     <p class="text-xs text-gray-500" x-text="t[lang].clientDesc"></p>
@@ -329,36 +402,28 @@ require_once 'api/conexion.php';
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="space-y-2">
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].name"></label>
-                            <input type="text" x-model="cliente.nombre" placeholder="Ej. Gustavo Cruz" 
-                                   class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
+                            <input type="text" x-model="cliente.nombre" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
                         </div>
                         <div class="space-y-2">
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].phone"></label>
-                            <input type="tel" x-model="cliente.telefono" placeholder="Ej. 5512345678" maxlength="15"
-                                   class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
+                            <input type="tel" x-model="cliente.telefono" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
                         </div>
                         <div class="md:col-span-2 space-y-2">
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].email"></label>
-                            <input type="email" x-model="cliente.email" placeholder="ejemplo@correo.com" 
-                                   class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
+                            <input type="email" x-model="cliente.email" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
                         </div>
                         <div class="md:col-span-2 space-y-2">
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].address"></label>
-                            <textarea x-model="cliente.direccion" rows="3"
-                                      class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all"></textarea>
+                            <textarea x-model="cliente.direccion" rows="3" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all"></textarea>
                         </div>
                     </div>
 
-                    <div class="mt-8 pt-6 border-t border-dashed border-gray-300 dark:border-gray-700">
+                    <div class="mt-8 pt-6 border-t border-dashed border-gray-300 dark:border-gray-700" 
+                         x-show="!userLoggedIn">
                         <label class="flex items-center gap-3 cursor-pointer select-none">
-                            <div class="relative">
-                                <input type="checkbox" x-model="crearCuenta" class="sr-only peer">
-                                <div class="w-10 h-6 bg-gray-300 rounded-full peer peer-checked:bg-perpetua-aqua transition-all"></div>
-                                <div class="absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-all peer-checked:translate-x-4"></div>
-                            </div>
+                            <div class="relative"><input type="checkbox" x-model="crearCuenta" class="sr-only peer"><div class="w-10 h-6 bg-gray-300 rounded-full peer peer-checked:bg-perpetua-aqua transition-all"></div><div class="absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-all peer-checked:translate-x-4"></div></div>
                             <span class="font-bold text-sm" x-text="t[lang].createAccount"></span>
                         </label>
-
                         <div x-show="crearCuenta" x-transition class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 bg-perpetua-blue/5 p-4 rounded-xl border border-perpetua-blue/10">
                             <div>
                                 <label class="text-[10px] font-bold uppercase text-gray-400 ml-1" x-text="t[lang].pass"></label>
@@ -374,9 +439,7 @@ require_once 'api/conexion.php';
                 </div>
 
                 <div class="glass p-8 rounded-[2rem] shadow-xl transition-all" :class="formValido() ? 'opacity-100' : 'opacity-50 grayscale pointer-events-none'">
-                    <h2 class="text-xl font-black mb-6 uppercase flex items-center gap-3">
-                        <i data-lucide="credit-card" class="text-perpetua-aqua"></i> <span x-text="t[lang].paymentTitle"></span>
-                    </h2>
+                    <h2 class="text-xl font-black mb-6 uppercase flex items-center gap-3"><i data-lucide="credit-card" class="text-perpetua-aqua"></i> <span x-text="t[lang].paymentTitle"></span></h2>
                     <div id="paypal-button-container"></div>
                     <p class="text-[10px] text-center mt-4 text-gray-400 font-bold uppercase tracking-widest" x-text="t[lang].securePayment"></p>
                 </div>
@@ -385,7 +448,7 @@ require_once 'api/conexion.php';
             <div class="lg:col-span-1">
                 <div class="glass p-6 rounded-[2rem] shadow-xl sticky top-24 border-b-4 border-perpetua-blue">
                     <h3 class="font-black uppercase text-sm mb-6 pb-2 border-b dark:border-gray-700" x-text="t[lang].yourOrder"></h3>
-                    <div class="space-y-4 max-h-[40vh] overflow-y-auto pr-2 mb-6 custom-scrollbar">
+                    <div class="space-y-4 max-h-[35vh] overflow-y-auto pr-2 mb-6 custom-scrollbar">
                         <template x-for="item in cart" :key="item.id">
                             <div class="flex items-center gap-3">
                                 <img :src="procesarImagen(item.img)" class="w-12 h-12 rounded-xl object-contain bg-white p-1 border">
@@ -397,11 +460,27 @@ require_once 'api/conexion.php';
                             </div>
                         </template>
                     </div>
+
+                    <div class="mb-4 pt-4 border-t border-dashed border-gray-300 dark:border-gray-700">
+                        <label class="text-[10px] font-bold uppercase text-gray-400 ml-1 mb-1 block" x-text="t[lang].couponLabel"></label>
+                        <div class="flex gap-2">
+                            <input type="text" x-model="couponCode" placeholder="CODE" class="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none text-sm uppercase font-bold text-gray-700 dark:text-white">
+                            <button @click="applyCoupon()" class="bg-gray-900 text-white px-3 py-2 rounded-lg text-xs font-bold uppercase hover:bg-gray-700" x-text="t[lang].apply"></button>
+                        </div>
+                        <p x-show="couponMsg" x-text="couponMsg" class="text-[10px] font-bold mt-1" :class="couponApplied ? 'text-green-500' : 'text-red-500'"></p>
+                    </div>
+
                     <div class="pt-4 border-t dark:border-gray-700 space-y-2">
                         <div class="flex justify-between text-gray-400 font-bold text-[10px] uppercase">
                             <span x-text="t[lang].subtotal"></span>
-                            <span x-text="'$' + totalPrice()"></span>
+                            <span x-text="'$' + getSubtotal().toFixed(2)"></span>
                         </div>
+                        
+                        <div class="flex justify-between text-perpetua-aqua font-bold text-[10px] uppercase" x-show="discount > 0">
+                            <span x-text="t[lang].discount"></span>
+                            <span x-text="'-$' + discount.toFixed(2)"></span>
+                        </div>
+
                         <div class="flex justify-between text-gray-400 font-bold text-[10px] uppercase">
                             <span x-text="t[lang].shipping"></span>
                             <span class="text-green-500 font-bold" x-text="t[lang].free"></span>

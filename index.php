@@ -1,6 +1,6 @@
 <?php
 /**
- * index.php - Tienda Elite con Login/Recuperación Bilingüe
+ * index.php - Tienda Elite con Login/Recuperación Bilingüe + UX Mejorada (Reset Forms)
  */
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
@@ -165,6 +165,19 @@ if ($resultado && $resultado->num_rows > 0) {
                 saveCart() { localStorage.setItem('cart', JSON.stringify(this.cart)); setTimeout(() => lucide.createIcons(), 50); },
                 totalPrice() { return this.cart.reduce((s, i) => s + (i.precio * i.qty), 0).toFixed(2); },
 
+                // --- NUEVO: FUNCIÓN PARA LIMPIAR FORMULARIOS ---
+                resetForms() {
+                    this.showLoginModal = false;
+                    // Limpiamos datos sensibles y errores
+                    this.loginData = { email: '', password: '' };
+                    this.recEmail = '';
+                    this.recMsg = '';
+                    this.loginError = '';
+                    // Regresar a la vista inicial
+                    this.view = 'login';
+                },
+                // ----------------------------------------------
+
                 // LOGIN
                 login() {
                     this.loginError = '';
@@ -184,7 +197,8 @@ if ($resultado && $resultado->num_rows > 0) {
                             };
                             this.user = userData;
                             localStorage.setItem('cliente_perpetua', JSON.stringify(userData)); 
-                            this.showLoginModal = false;
+                            
+                            this.resetForms(); // Cierra y limpia
                             alert(this.t[this.lang].welcomeUser + data.datos.nombre + '!');
                         } else {
                             this.loginError = data.message;
@@ -252,7 +266,7 @@ if ($resultado && $resultado->num_rows > 0) {
     </div>
 
     <div x-show="showLoginModal" x-cloak class="fixed inset-0 z-[200] flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showLoginModal = false; view='login'"></div>
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="resetForms()"></div>
         
         <div x-show="showLoginModal" x-transition class="relative bg-white dark:bg-gray-800 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 dark:border-gray-700">
             
@@ -261,11 +275,11 @@ if ($resultado && $resultado->num_rows > 0) {
                 <div class="space-y-4">
                     <div>
                         <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].email"></label>
-                        <input type="email" x-model="loginData.email" placeholder="ejemplo@correo.com" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
+                        <input type="email" x-model="loginData.email" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
                     </div>
                     <div>
                         <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].pass"></label>
-                        <input type="password" x-model="loginData.password" placeholder="••••••" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
+                        <input type="password" x-model="loginData.password" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
                     </div>
                     
                     <div class="flex justify-end">
@@ -296,7 +310,7 @@ if ($resultado && $resultado->num_rows > 0) {
                 </div>
             </div>
 
-            <button @click="showLoginModal = false; view='login'" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-6 h-6"></i></button>
+            <button @click="resetForms()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-6 h-6"></i></button>
         </div>
     </div>
 
@@ -315,10 +329,17 @@ if ($resultado && $resultado->num_rows > 0) {
             </div>
 
             <div class="flex items-center gap-3">
+                
                 <template x-if="user">
                     <div class="flex items-center gap-2 bg-perpetua-blue/10 px-3 py-1 rounded-full">
-                        <span class="text-xs font-bold text-perpetua-blue dark:text-perpetua-aqua" x-text="user.nombre.split(' ')[0]"></span>
-                        <button @click="logout()" title="Cerrar sesión" class="text-red-400 hover:text-red-600"><i data-lucide="log-out" class="w-3 h-3"></i></button>
+                        <a href="perfil.php" class="text-xs font-bold text-perpetua-blue dark:text-perpetua-aqua hover:underline flex items-center gap-1">
+                            <i data-lucide="user" class="w-3 h-3"></i>
+                            <span x-text="user.nombre.split(' ')[0]"></span>
+                        </a>
+                        <div class="w-px h-3 bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                        <button @click="logout()" title="Cerrar sesión" class="text-red-400 hover:text-red-600">
+                            <i data-lucide="log-out" class="w-3 h-3"></i>
+                        </button>
                     </div>
                 </template>
 

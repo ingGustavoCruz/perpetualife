@@ -1,101 +1,167 @@
 <?php
 /**
  * api/confirmar_pago.php
- * Versión ROBUSTA (La tuya)
+ * CORREGIDO: Moneda MXN, Estatus 'COMPLETADO' y IDs de PayPal duplicados para compatibilidad.
  */
+require_once 'conexion.php';
 header('Content-Type: application/json');
-require_once 'conexion.php'; // Asegúrate que este archivo crea la variable $conn como new mysqli(...)
 
-// 1. Recibimos los datos JSON
-$input = json_decode(file_get_contents('php://input'), true);
+function registrarLog($mensaje) {
+    file_put_contents('log_errores.txt', date('Y-m-d H:i:s') . " - " . $mensaje . "\n", FILE_APPEND);
+}
 
-if (!$input) {
+$input = file_get_contents('php://input');
+$data = json_decode($input, true);
+
+if (!$data) {
+    registrarLog("Error: No llegaron datos JSON.");
     echo json_encode(['status' => 'error', 'message' => 'No se recibieron datos']);
     exit;
 }
 
-$orderID = $input['orderID'];
-$clienteData = $input['cliente']; // { nombre, email, telefono, direccion }
-$cart = $input['cart'];
-$total = $input['total'];
+$orderID = $data['orderID'] ?? '';
+$cart = $data['cart'] ?? [];
+$total = $data['total'] ?? 0;
+$cliente = $data['cliente'] ?? [];
+$crearCuenta = $data['crear_cuenta'] ?? false;
+$newPassword = $data['new_password'] ?? '';
+$cuponCodigo = $data['cupon'] ?? null; 
 
-// 2. Iniciar Transacción
+registrarLog("Iniciando proceso para Cliente: " . ($cliente['email'] ?? 'Desconocido'));
+
 $conn->begin_transaction();
 
 try {
-    // ---------------------------------------------------------
-    // PASO 1: GESTIONAR EL CLIENTE
-    // ---------------------------------------------------------
-    $cliente_id = 0;
+    // 1. GESTIÓN DE CLIENTE
+    $email = $conn->real_escape_string($cliente['email']);
+    $nombre = $conn->real_escape_string($cliente['nombre']);
+    $telefono = $conn->real_escape_string($cliente['telefono']);
+    $direccion = $conn->real_escape_string($cliente['direccion']);
     
-    // Buscamos por email
-    $stmtCheck = $conn->prepare("SELECT id FROM clientes WHERE email = ? LIMIT 1");
-    $stmtCheck->bind_param("s", $clienteData['email']);
-    $stmtCheck->execute();
-    $resCheck = $stmtCheck->get_result();
-
-    if ($resCheck->num_rows > 0) {
-        // ACTUALIZAR EXISTENTE
-        $row = $resCheck->fetch_assoc();
+    $check = $conn->query("SELECT id FROM kaiexper_perpetualife.clientes WHERE email = '$email'");
+    
+    if ($check->num_rows > 0) {
+        $row = $check->fetch_assoc();
         $cliente_id = $row['id'];
+        registrarLog("Cliente existente ID: " . $cliente_id);
         
-        // Actualizamos incluyendo el TELEFONO
-        $stmtUpdate = $conn->prepare("UPDATE clientes SET nombre = ?, direccion = ?, telefono = ? WHERE id = ?");
-        $stmtUpdate->bind_param("sssi", $clienteData['nombre'], $clienteData['direccion'], $clienteData['telefono'], $cliente_id);
-        $stmtUpdate->execute();
-    } else {
-        // CREAR NUEVO
-        $stmtInsertCli = $conn->prepare("INSERT INTO clientes (nombre, email, telefono, direccion, fecha_registro) VALUES (?, ?, ?, ?, NOW())");
-        $stmtInsertCli->bind_param("ssss", $clienteData['nombre'], $clienteData['email'], $clienteData['telefono'], $clienteData['direccion']);
-        
-        if (!$stmtInsertCli->execute()) {
-            throw new Exception("Error al registrar cliente: " . $stmtInsertCli->error);
+        if ($crearCuenta && !empty($newPassword)) {
+            $passHash = password_hash($newPassword, PASSWORD_DEFAULT);
+            $conn->query("UPDATE kaiexper_perpetualife.clientes SET nombre='$nombre', telefono='$telefono', direccion='$direccion', password='$passHash' WHERE id=$cliente_id");
+        } else {
+            $conn->query("UPDATE kaiexper_perpetualife.clientes SET nombre='$nombre', telefono='$telefono', direccion='$direccion' WHERE id=$cliente_id");
         }
+    } else {
+        registrarLog("Creando cliente nuevo...");
+        $passHash = NULL;
+        if ($crearCuenta && !empty($newPassword)) {
+            $passHash = password_hash($newPassword, PASSWORD_DEFAULT);
+        }
+        $stmt = $conn->prepare("INSERT INTO kaiexper_perpetualife.clientes (nombre, email, telefono, direccion, password, fecha_registro) VALUES (?, ?, ?, ?, ?, NOW())");
+        $stmt->bind_param("sssss", $nombre, $email, $telefono, $direccion, $passHash);
+        $stmt->execute();
         $cliente_id = $conn->insert_id;
+        registrarLog("Cliente creado ID: " . $cliente_id);
     }
 
-    // ---------------------------------------------------------
-    // PASO 2: CREAR EL PEDIDO
-    // ---------------------------------------------------------
-    $estado = 'PAGADO';
-    $moneda = 'MXN'; 
+    // 2. INSERTAR PEDIDO (CORREGIDO AQUI)
+    registrarLog("Insertando pedido...");
     
-    $stmtPedido = $conn->prepare("INSERT INTO pedidos (cliente_id, paypal_order_id, total, moneda, estado, fecha) VALUES (?, ?, ?, ?, ?, NOW())");
-    $stmtPedido->bind_param("isdss", $cliente_id, $orderID, $total, $moneda, $estado);
-
-    if (!$stmtPedido->execute()) {
-        throw new Exception("Error al crear pedido: " . $stmtPedido->error);
-    }
+    // CAMBIOS APLICADOS:
+    // - Agregamos 'paypal_order_id' y 'moneda' a las columnas.
+    // - 'estado' ahora es 'COMPLETADO' (string) en lugar de 1.
+    // - 'moneda' ahora es 'MXN'.
+    $sql_pedido = "INSERT INTO kaiexper_perpetualife.pedidos 
+                   (cliente_id, fecha, total, estado, metodo_pago, id_transaccion, paypal_order_id, moneda) 
+                   VALUES (?, NOW(), ?, 'COMPLETADO', 'PayPal', ?, ?, 'MXN')";
+                   
+    $stmt = $conn->prepare($sql_pedido);
+    if(!$stmt) throw new Exception("Error preparando INSERT pedido: " . $conn->error);
+    
+    // Bind: cliente_id(i), total(d), orderID(s), orderID(s)
+    // Pasamos $orderID dos veces para llenar ambas columnas
+    $stmt->bind_param("idss", $cliente_id, $total, $orderID, $orderID);
+    
+    if (!$stmt->execute()) throw new Exception("Error ejecutando INSERT pedido: " . $stmt->error);
+    
     $pedido_id = $conn->insert_id;
+    registrarLog("Pedido creado ID: " . $pedido_id);
 
-    // ---------------------------------------------------------
-    // PASO 3: DETALLES Y STOCK
-    // ---------------------------------------------------------
-    $stmtDetalle = $conn->prepare("INSERT INTO detalles_pedido (pedido_id, producto_id, cantidad, precio_unitario) VALUES (?, ?, ?, ?)");
-    $stmtStock = $conn->prepare("UPDATE productos SET stock = stock - ? WHERE id = ?");
+    // 3. DETALLES DEL PEDIDO
+    $sql_detalle = "INSERT INTO kaiexper_perpetualife.detalles_pedido (pedido_id, producto_id, cantidad, precio_unitario) VALUES (?, ?, ?, ?)";
+    $stmt_detalle = $conn->prepare($sql_detalle);
+    $stmt_stock = $conn->prepare("UPDATE kaiexper_perpetualife.productos SET stock = stock - ? WHERE id = ?");
+
+    // Preparar HTML para correo
+    $listaProductosHTML = "";
 
     foreach ($cart as $item) {
-        // Insertar Detalle
-        $stmtDetalle->bind_param("iiid", $pedido_id, $item['id'], $item['qty'], $item['precio']);
-        if (!$stmtDetalle->execute()) {
-            throw new Exception("Error al insertar detalle producto ID: " . $item['id']);
-        }
+        $stmt_detalle->bind_param("iiid", $pedido_id, $item['id'], $item['qty'], $item['precio']);
+        $stmt_detalle->execute();
 
-        // Descontar Stock
-        $stmtStock->bind_param("ii", $item['qty'], $item['id']);
-        $stmtStock->execute();
+        $stmt_stock->bind_param("ii", $item['qty'], $item['id']);
+        $stmt_stock->execute();
+
+        $subtotalItem = number_format($item['precio'] * $item['qty'], 2);
+        $listaProductosHTML .= "
+            <tr style='border-bottom: 1px solid #eee;'>
+                <td style='padding: 10px;'>{$item['nombre']}</td>
+                <td style='padding: 10px; text-align: center;'>{$item['qty']}</td>
+                <td style='padding: 10px; text-align: right;'>$$subtotalItem</td>
+            </tr>";
     }
 
-    // Confirmar todo
     $conn->commit();
+    registrarLog("¡ÉXITO! Transacción completada.");
+
+    // 4. ENVIAR CORREO
+    require_once 'mailer.php';
+    $asuntoCorreo = "Confirmación de Compra #PERP-" . str_pad($pedido_id, 5, "0", STR_PAD_LEFT);
+    $totalFormateado = number_format($total, 2);
+    
+    $htmlCorreo = "
+    <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 10px; overflow: hidden;'>
+        <div style='background-color: #1e3a8a; color: white; padding: 20px; text-align: center;'>
+            <h1 style='margin: 0; font-size: 24px;'>¡Gracias por tu compra!</h1>
+            <p style='margin: 5px 0 0;'>Orden #$pedido_id</p>
+        </div>
+        <div style='padding: 20px;'>
+            <p>Hola <strong>$nombre</strong>,</p>
+            <p>Hemos recibido tu pago correctamente. Aquí tienes el resumen:</p>
+            <table style='width: 100%; border-collapse: collapse; margin-top: 20px;'>
+                <thead>
+                    <tr style='background-color: #f9fafb; text-align: left;'>
+                        <th style='padding: 10px;'>Producto</th>
+                        <th style='padding: 10px; text-align: center;'>Cant.</th>
+                        <th style='padding: 10px; text-align: right;'>Precio</th>
+                    </tr>
+                </thead>
+                <tbody>$listaProductosHTML</tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan='2' style='padding: 15px; text-align: right; font-weight: bold;'>TOTAL:</td>
+                        <td style='padding: 15px; text-align: right; font-weight: bold; color: #1e3a8a; font-size: 18px;'>$$totalFormateado MXN</td>
+                    </tr>
+                </tfoot>
+            </table>
+            <div style='background-color: #f0f9ff; padding: 15px; border-radius: 8px; margin-top: 20px;'>
+                <p style='margin: 0; font-weight: bold; color: #1e3a8a;'>Dirección de Envío:</p>
+                <p style='margin: 5px 0 0; color: #555;'>$direccion</p>
+            </div>
+        </div>
+    </div>";
+
+    if(enviarCorreo($email, $asuntoCorreo, $htmlCorreo)) {
+        registrarLog("Correo enviado a $email");
+    } else {
+        registrarLog("FALLO envío de correo");
+    }
+
     echo json_encode(['status' => 'success', 'pedido_id' => $pedido_id]);
 
 } catch (Exception $e) {
-    // Si algo falla, deshacer cambios
     $conn->rollback();
-    // Loguear el error real en el servidor (opcional)
-    error_log($e->getMessage());
-    // Responder al frontend
-    echo json_encode(['status' => 'error', 'message' => 'Error al procesar: ' . $e->getMessage()]);
+    registrarLog("FATAL ERROR: " . $e->getMessage());
+    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }
 ?>
