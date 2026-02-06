@@ -1,9 +1,10 @@
 <?php
 /**
  * api/confirmar_pago.php
- * VERSIÓN FINAL DE PRODUCCIÓN
- * - Seguridad: Prepared Statements (Blindado contra SQL Injection)
- * - Negocio: Validación de Stock Real + Cálculo de Envío Dinámico (JSON)
+ * VERSIÓN V1.1 - CONCURRENCIA DE STOCK (RACE CONDITION) SOLUCIONADA
+ * * Cambios:
+ * - Prefijos de BD explícitos (kaiexper_perpetualife.)
+ * - Lógica Optimistic Locking en el descuento de stock.
  */
 
 // 1. CONFIGURACIÓN INICIAL
@@ -12,7 +13,7 @@ require_once 'mailer.php';
 
 header('Content-Type: application/json');
 
-// Función helper para logs de errores/transacciones
+// Función helper para logs
 function registrarLog($mensaje) {
     $rutaLog = __DIR__ . '/log_transacciones.txt';
     file_put_contents($rutaLog, date('Y-m-d H:i:s') . " - " . $mensaje . "\n", FILE_APPEND);
@@ -28,7 +29,7 @@ if (!$data) {
     exit;
 }
 
-// Extracción de variables (sin sanitizar aquí, lo hará bind_param después)
+// Variables iniciales
 $orderID = $data['orderID'] ?? 'MANUAL-' . time();
 $cart = $data['cart'] ?? [];
 $cliente = $data['cliente'] ?? [];
@@ -48,12 +49,14 @@ $conn->begin_transaction();
 
 try {
     // =========================================================================
-    // PASO 1: VALIDACIÓN DE PRODUCTOS Y STOCK (Server Side)
+    // PASO 1: PRE-VALIDACIÓN DE STOCK (Lectura inicial)
     // =========================================================================
+    // Aunque validamos de nuevo al final (Paso 6), esta lectura evita procesar 
+    // todo si ya sabemos que no hay stock desde el principio.
     $subtotalReal = 0;
     $itemsProcesados = []; 
 
-    $stmtProd = $conn->prepare("SELECT id, nombre, precio, stock FROM productos WHERE id = ?");
+    $stmtProd = $conn->prepare("SELECT id, nombre, precio, stock FROM kaiexper_perpetualife.productos WHERE id = ?");
 
     foreach ($cart as $item) {
         $idProd = intval($item['id']);
@@ -88,21 +91,19 @@ try {
 
 
     // =========================================================================
-    // PASO 2: CÁLCULO DE ENVÍO DINÁMICO (Tabla config_envios)
+    // PASO 2: CÁLCULO DE ENVÍO DINÁMICO
     // =========================================================================
     $costoEnvio = 0;
     $zonaEncontrada = false;
-    $estadoCliente = $cliente['estado']; // Ej: "Coahuila"
+    $estadoCliente = $cliente['estado'];
 
-    // Consultamos la tabla de configuración
-    $resEnvios = $conn->query("SELECT id, costo, estados FROM config_envios ORDER BY costo ASC");
+    // Consulta con prefijo de BD
+    $resEnvios = $conn->query("SELECT id, costo, estados FROM kaiexper_perpetualife.config_envios ORDER BY costo ASC");
 
     while ($row = $resEnvios->fetch_assoc()) {
-        // La columna 'estados' es TEXT pero contiene un JSON
         $listaEstados = json_decode($row['estados'], true);
         
         if (is_array($listaEstados)) {
-            // Buscamos coincidencia exacta con lo que envía el selector
             if (in_array($estadoCliente, $listaEstados)) {
                 $costoEnvio = floatval($row['costo']);
                 $zonaEncontrada = true;
@@ -112,14 +113,14 @@ try {
         }
     }
 
-    // Fallback: Si no se encuentra, usar Zona Nacional (ID 3)
+    // Fallback Zona Nacional (ID 3)
     if (!$zonaEncontrada) {
-        $resDefault = $conn->query("SELECT costo FROM config_envios WHERE id = 3");
+        $resDefault = $conn->query("SELECT costo FROM kaiexper_perpetualife.config_envios WHERE id = 3");
         if ($rowDef = $resDefault->fetch_assoc()) {
             $costoEnvio = floatval($rowDef['costo']);
-            registrarLog("Zona no encontrada. Aplicando tarifa default (ID 3): $$costoEnvio");
+            registrarLog("Zona no encontrada. Aplicando tarifa default: $$costoEnvio");
         } else {
-            $costoEnvio = 350.00; // Último recurso hardcoded
+            $costoEnvio = 350.00; 
         }
     }
 
@@ -132,14 +133,13 @@ try {
     $infoCupon = "";
     
     if ($cuponCodigo) {
-        $stmtCup = $conn->prepare("SELECT * FROM cupones WHERE codigo = ? LIMIT 1");
+        $stmtCup = $conn->prepare("SELECT * FROM kaiexper_perpetualife.cupones WHERE codigo = ? LIMIT 1");
         $stmtCup->bind_param("s", $cuponCodigo);
         $stmtCup->execute();
         $resCup = $stmtCup->get_result();
 
         if ($rowCup = $resCup->fetch_assoc()) {
             $hoy = date('Y-m-d');
-            // Validaciones de vigencia
             if ($rowCup['estado_manual'] === 'activo' && 
                 $rowCup['fecha_vencimiento'] >= $hoy && 
                 ($rowCup['limite_uso'] == 0 || $rowCup['usos_actuales'] < $rowCup['limite_uso'])) {
@@ -148,7 +148,7 @@ try {
                 $infoCupon = $cuponCodigo;
                 $tipoOferta = $rowCup['tipo_oferta'];
 
-                // Descuento monetario
+                // Cálculo Descuento
                 if ($tipoOferta === 'descuento' || $tipoOferta === 'ambos') {
                     if ($rowCup['tipo'] === 'porcentaje') {
                         $descuentoReal = $subtotalReal * ($rowCup['descuento'] / 100);
@@ -156,8 +156,7 @@ try {
                         $descuentoReal = floatval($rowCup['descuento']);
                     }
                 }
-
-                // Envío gratis
+                // Cálculo Envío
                 if ($tipoOferta === 'envio' || $tipoOferta === 'ambos') {
                     $costoEnvio = 0; 
                     $infoCupon .= " (Envío Gratis)";
@@ -167,44 +166,38 @@ try {
         $stmtCup->close();
     }
 
-    // CÁLCULO FINAL DEL TOTAL A COBRAR
     $totalCalculado = ($subtotalReal - $descuentoReal) + $costoEnvio;
     if ($totalCalculado < 0) $totalCalculado = 0;
 
-    registrarLog("Sub: $subtotalReal | Desc: $descuentoReal | Env: $costoEnvio | Total: $totalCalculado");
-
 
     // =========================================================================
-    // PASO 4: GUARDAR/ACTUALIZAR CLIENTE
+    // PASO 4: GESTIÓN DE CLIENTE
     // =========================================================================
     $email = $cliente['email'];
     $nombre = $cliente['nombre'];
     $telefono = $cliente['telefono'];
     $direccion = $cliente['direccion'];
-    $estadoClienteDB = $cliente['estado']; // Variable renombrada para evitar conflictos
+    $estadoClienteDB = $cliente['estado'];
 
-    // Verificamos si existe
-    $stmtCheck = $conn->prepare("SELECT id FROM clientes WHERE email = ?");
+    $stmtCheck = $conn->prepare("SELECT id FROM kaiexper_perpetualife.clientes WHERE email = ?");
     $stmtCheck->bind_param("s", $email);
     $stmtCheck->execute();
     $resCheck = $stmtCheck->get_result();
 
     if ($row = $resCheck->fetch_assoc()) {
         $cliente_id = $row['id'];
-        // Update
         if ($crearCuenta && !empty($newPassword)) {
             $passHash = password_hash($newPassword, PASSWORD_DEFAULT);
-            $stmtUpd = $conn->prepare("UPDATE clientes SET nombre=?, telefono=?, estado=?, direccion=?, password=? WHERE id=?");
+            $stmtUpd = $conn->prepare("UPDATE kaiexper_perpetualife.clientes SET nombre=?, telefono=?, estado=?, direccion=?, password=? WHERE id=?");
             $stmtUpd->bind_param("sssssi", $nombre, $telefono, $estadoClienteDB, $direccion, $passHash, $cliente_id);
         } else {
-            $stmtUpd = $conn->prepare("UPDATE clientes SET nombre=?, telefono=?, estado=?, direccion=? WHERE id=?");
+            $stmtUpd = $conn->prepare("UPDATE kaiexper_perpetualife.clientes SET nombre=?, telefono=?, estado=?, direccion=? WHERE id=?");
             $stmtUpd->bind_param("ssssi", $nombre, $telefono, $estadoClienteDB, $direccion, $cliente_id);
         }
         $stmtUpd->execute();
     } else {
-        // Insert
         $passHash = ($crearCuenta && !empty($newPassword)) ? password_hash($newPassword, PASSWORD_DEFAULT) : null;
-        $stmtIns = $conn->prepare("INSERT INTO clientes (nombre, email, telefono, direccion, estado, password, fecha_registro) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+        $stmtIns = $conn->prepare("INSERT INTO kaiexper_perpetualife.clientes (nombre, email, telefono, direccion, estado, password, fecha_registro) VALUES (?, ?, ?, ?, ?, ?, NOW())");
         $stmtIns->bind_param("ssssss", $nombre, $email, $telefono, $direccion, $estadoClienteDB, $passHash);
         $stmtIns->execute();
         $cliente_id = $conn->insert_id;
@@ -214,8 +207,7 @@ try {
     // =========================================================================
     // PASO 5: INSERTAR PEDIDO
     // =========================================================================
-    // Nota: Guardamos el cupón usado para referencia futura
-    $sql_pedido = "INSERT INTO pedidos (cliente_id, fecha, total, estado, metodo_pago, id_transaccion, paypal_order_id, moneda, cupon) VALUES (?, NOW(), ?, 'COMPLETADO', 'PayPal', ?, ?, 'MXN', ?)";
+    $sql_pedido = "INSERT INTO kaiexper_perpetualife.pedidos (cliente_id, fecha, total, estado, metodo_pago, id_transaccion, paypal_order_id, moneda, cupon) VALUES (?, NOW(), ?, 'COMPLETADO', 'PayPal', ?, ?, 'MXN', ?)";
     $stmtPed = $conn->prepare($sql_pedido);
     $stmtPed->bind_param("idsss", $cliente_id, $totalCalculado, $orderID, $orderID, $cuponCodigo);
     
@@ -224,21 +216,32 @@ try {
 
 
     // =========================================================================
-    // PASO 6: DETALLES, STOCK Y CONSUMO DE CUPÓN
+    // PASO 6: DETALLES Y DESCUENTO DE STOCK (RACE CONDITION FIX)
     // =========================================================================
-    $stmtDet = $conn->prepare("INSERT INTO detalles_pedido (pedido_id, producto_id, cantidad, precio_unitario) VALUES (?, ?, ?, ?)");
-    $stmtStk = $conn->prepare("UPDATE productos SET stock = stock - ? WHERE id = ?");
+    $stmtDet = $conn->prepare("INSERT INTO kaiexper_perpetualife.detalles_pedido (pedido_id, producto_id, cantidad, precio_unitario) VALUES (?, ?, ?, ?)");
+    
+    // AQUÍ ESTÁ LA MAGIA: "AND stock >= ?"
+    // Esto asegura que la DB solo reste si tiene suficiente en ese milisegundo exacto.
+    $stmtStk = $conn->prepare("UPDATE kaiexper_perpetualife.productos SET stock = stock - ? WHERE id = ? AND stock >= ?");
 
     $listaProductosHTML = "";
 
     foreach ($itemsProcesados as $item) {
-        // Detalle
+        // 1. Insertar Detalle
         $stmtDet->bind_param("iiid", $pedido_id, $item['id'], $item['cantidad'], $item['precio']);
         $stmtDet->execute();
 
-        // Restar Stock
-        $stmtStk->bind_param("ii", $item['cantidad'], $item['id']);
+        // 2. Restar Stock con Optimistic Locking
+        // Bind: (Cantidad a restar, ID producto, Cantidad mínima requerida)
+        $stmtStk->bind_param("iii", $item['cantidad'], $item['id'], $item['cantidad']);
         $stmtStk->execute();
+
+        // Verificar si la DB realmente hizo el cambio
+        if ($stmtStk->affected_rows === 0) {
+            // ¡RACE CONDITION DETECTADA!
+            // Alguien compró el último item milisegundos antes que este proceso.
+            throw new Exception("Lo sentimos, el producto '{$item['nombre']}' se acaba de agotar.");
+        }
 
         // HTML Correo
         $subtotalItem = number_format($item['precio'] * $item['cantidad'], 2);
@@ -250,9 +253,11 @@ try {
             </tr>";
     }
 
-    // Quemar Cupón
+    // =========================================================================
+    // PASO 7: QUEMAR CUPÓN (OPCIONAL: TAMBIÉN SE PUEDE BLINDAR)
+    // =========================================================================
     if ($idCuponAplicado) {
-        $stmtCupUpd = $conn->prepare("UPDATE cupones SET usos_actuales = usos_actuales + 1 WHERE id = ?");
+        $stmtCupUpd = $conn->prepare("UPDATE kaiexper_perpetualife.cupones SET usos_actuales = usos_actuales + 1 WHERE id = ?");
         $stmtCupUpd->bind_param("i", $idCuponAplicado);
         $stmtCupUpd->execute();
     }
@@ -261,7 +266,7 @@ try {
 
 
     // =========================================================================
-    // PASO 7: ENVIAR CORREO DE CONFIRMACIÓN
+    // PASO 8: ENVIAR CORREO
     // =========================================================================
     $filaDescuento = "";
     if ($descuentoReal > 0) {
@@ -311,6 +316,7 @@ try {
 } catch (Exception $e) {
     if ($conn->in_transaction) $conn->rollback();
     registrarLog("ERROR FATAL: " . $e->getMessage());
-    echo json_encode(['status' => 'error', 'message' => 'Error procesando el pedido.']);
+    // El frontend recibirá este mensaje y lo mostrará en el alert()
+    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }
 ?>
