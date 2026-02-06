@@ -1,53 +1,72 @@
 <?php
 /**
  * admin/login.php
- * Versión Final: Soporte de Roles + Prefijo BD + Validación Segura
+ * Versión Final: Seguridad Avanzada + Logs + Regeneración de ID de Sesión
  */
 session_start();
 
-// 1. Si ya hay sesión, mandar al dashboard
+// 1. Si ya hay sesión válida, mandar al dashboard
 if (isset($_SESSION['admin_id'])) {
     header("Location: index.php");
     exit;
 }
 
-// 2. Conexión a BD
+// 2. Conexión y Logger
 require_once '../api/conexion.php';
+require_once '../api/logger.php'; // Para registrar accesos
 
 $error = '';
 
 // 3. Procesar el formulario
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $email = $conn->real_escape_string($_POST['email']);
+    // Sanitización básica (trim) antes de la lógica
+    $email = trim($_POST['email']);
     $pass = $_POST['password'];
 
-    // Consulta a la BD con prefijo explícito 'kaiexper_perpetualife'
-    // IMPORTANTE: Solicitamos también el campo 'rol'
+    // Consulta Segura (Prepared Statement)
+    // Buscamos explícitamente en la BD correcta
     $stmt = $conn->prepare("SELECT id, nombre, password, rol FROM kaiexper_perpetualife.admin_usuarios WHERE email = ? LIMIT 1");
     $stmt->bind_param("s", $email);
     $stmt->execute();
     $result = $stmt->get_result();
 
     if ($user_data = $result->fetch_assoc()) {
-        // Verificar contraseña encriptada
+        // Verificar contraseña
         if (password_verify($pass, $user_data['password'])) {
             
-            // --- INICIO DE SESIÓN EXITOSO ---
+            // --- ÉXITO ---
+            
+            // A) Prevención de Session Fixation (CRÍTICO)
+            session_regenerate_id(true);
+
+            // B) Establecer variables de sesión
             $_SESSION['admin_id'] = $user_data['id'];
             $_SESSION['admin_nombre'] = $user_data['nombre'];
-            $_SESSION['admin_rol'] = $user_data['rol']; // <--- ¡VITAL PARA LOS PERMISOS!
+            $_SESSION['admin_rol'] = $user_data['rol'];
             
-            // Actualizar fecha de último login (Opcional, si tienes esa columna)
-            // $conn->query("UPDATE kaiexper_perpetualife.admin_usuarios SET ultimo_login = NOW() WHERE id = " . $user_data['id']);
+            // C) Registrar LOG de Acceso Exitoso
+            // Nota: Aquí forzamos las variables de sesión temporalmente para el log, 
+            // ya que logger.php las lee de $_SESSION
+            registrarBitacora('Seguridad', 'Login', "Acceso exitoso: {$user_data['nombre']} (IP: {$_SERVER['REMOTE_ADDR']})");
             
+            // D) Redirigir
             header("Location: index.php");
             exit;
+
         } else {
+            // --- FALLO (Contraseña incorrecta) ---
             $error = "La contraseña es incorrecta.";
+            
+            // Log de Intento Fallido (Seguridad)
+            // Usamos un logger manual aquí porque no hay sesión
+            registrarBitacora('Seguridad', 'Fallo Login', "Intento fallido (Pass Incorrecto) para: $email (IP: {$_SERVER['REMOTE_ADDR']})");
         }
     } else {
+        // --- FALLO (Usuario no existe) ---
         $error = "El correo no existe o no tiene acceso.";
+        registrarBitacora('Seguridad', 'Fallo Login', "Intento fallido (Usuario No Existe): $email (IP: {$_SERVER['REMOTE_ADDR']})");
     }
+    $stmt->close();
 }
 ?>
 <!DOCTYPE html>
