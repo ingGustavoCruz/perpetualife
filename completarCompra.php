@@ -1,7 +1,7 @@
 <?php
 /**
  * completarCompra.php - Perpetualife
- * Checkout Final: Persistencia + Cupones + Envío Dinámico + UX (Sin eliminar nada)
+ * Checkout Final: Persistencia + Cupones + Envío Dinámico + Rastreo de Carrito
  */
 require_once 'api/conexion.php'; 
 ?>
@@ -36,13 +36,10 @@ require_once 'api/conexion.php';
                 lang: localStorage.getItem('lang') || 'es',
                 cart: JSON.parse(localStorage.getItem('cart')) || [],
                 
-                cliente: { nombre: '', email: '', telefono: '', direccion: '', estado: '' }, // Agregado 'estado'
+                // 1. Agregamos 'estado' al objeto cliente
+                cliente: { nombre: '', email: '', telefono: '', direccion: '', estado: '' },
                 
-                // Lista de Estados para el Selector
-                estadosMx: ["Aguascalientes", "Baja California", "Baja California Sur", "Campeche", "Chiapas", "Chihuahua", "Ciudad de México", "Coahuila", "Colima", "Durango", "Estado de México", "Guanajuato", "Guerrero", "Hidalgo", "Jalisco", "Michoacán", "Morelos", "Nayarit", "Nuevo León", "Oaxaca", "Puebla", "Querétaro", "Quintana Roo", "San Luis Potosí", "Sinaloa", "Sonora", "Tabasco", "Tamaulipas", "Tlaxcala", "Veracruz", "Yucatán", "Zacatecas"],
-
                 userLoggedIn: false, 
-
                 showLoginModal: false,
                 loginView: 'login',
                 loginData: { email: '', password: '' },
@@ -58,7 +55,10 @@ require_once 'api/conexion.php';
                 couponApplied: false,
                 couponMsg: '',
                 shippingFree: false, 
-                shippingCost: 150, // Inicializado con Zona Local
+
+                // 2. Variables para Envío Dinámico y Lista de Estados
+                shippingCost: 150, // Iniciamos con el valor de Zona Local
+                estadosMx: ["Aguascalientes", "Baja California", "Baja California Sur", "Campeche", "Chiapas", "Chihuahua", "Ciudad de México", "Coahuila", "Colima", "Durango", "Estado de México", "Guanajuato", "Guerrero", "Hidalgo", "Jalisco", "Michoacán", "Morelos", "Nayarit", "Nuevo León", "Oaxaca", "Puebla", "Querétaro", "Quintana Roo", "San Luis Potosí", "Sinaloa", "Sonora", "Tabasco", "Tamaulipas", "Tlaxcala", "Veracruz", "Yucatán", "Zacatecas"],
 
                 isProcessing: false,
 
@@ -74,7 +74,7 @@ require_once 'api/conexion.php';
                         yourEmail: 'Tu Correo Registrado', sendLink: 'Enviar Enlace', cancel: 'Cancelar y Volver',
                         shippingTitle: 'Datos de Envío',
                         name: 'Nombre Completo', phone: 'Teléfono', address: 'Dirección de Entrega',
-                        state: 'Estado / Entidad', // Agregado
+                        state: 'Estado / Entidad', // Traducción nueva
                         createAccount: 'Crear una cuenta para futuras compras',
                         confirmPass: 'Confirmar Contraseña',
                         passMismatch: 'Las contraseñas no coinciden',
@@ -101,7 +101,7 @@ require_once 'api/conexion.php';
                         yourEmail: 'Your Registered Email', sendLink: 'Send Link', cancel: 'Cancel',
                         shippingTitle: 'Shipping Details',
                         name: 'Full Name', phone: 'Phone Number', address: 'Shipping Address',
-                        state: 'State / Province', // Agregado
+                        state: 'State / Province', // Traducción nueva
                         createAccount: 'Create an account for future purchases',
                         confirmPass: 'Confirm Password',
                         passMismatch: 'Passwords do not match',
@@ -138,7 +138,7 @@ require_once 'api/conexion.php';
                     this.renderPayPal();
                 },
 
-                // Nueva función para envío dinámico
+                // 3. Función para actualizar costo de envío
                 updateShipping() {
                     if(!this.cliente.estado) return;
                     fetch('api/get_shipping.php', {
@@ -150,6 +150,20 @@ require_once 'api/conexion.php';
                     .then(data => {
                         this.shippingCost = parseFloat(data.costo);
                         this.renderPayPal(); 
+                    });
+                },
+
+                // 4. Función para rastrear carritos abandonados
+                trackAbandonment() {
+                    if(!this.cliente.email.includes('@')) return;
+                    fetch('api/guardar_intento.php', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            email: this.cliente.email,
+                            nombre: this.cliente.nombre,
+                            cart: this.cart
+                        })
                     });
                 },
 
@@ -191,7 +205,9 @@ require_once 'api/conexion.php';
                             this.crearCuenta = false;
                             this.resetForms(); 
                             alert(this.t[this.lang].welcomeUser);
-                        } else { this.loginError = data.message; }
+                        } else {
+                            this.loginError = data.message;
+                        }
                     })
                     .catch(err => { this.loginError = "Connection Error"; });
                 },
@@ -207,7 +223,6 @@ require_once 'api/conexion.php';
                     .then(res => res.json())
                     .then(data => {
                         this.recMsg = data.message;
-                        if(data.debug_link) alert("DEV LINK: " + data.debug_link);
                     })
                     .catch(err => { this.recMsg = "Error sending request"; });
                 },
@@ -224,31 +239,35 @@ require_once 'api/conexion.php';
                     .then(data => {
                         if (data.valid) {
                             this.discount = parseFloat(data.data.descuento_aplicado);
-                            this.shippingFree = (data.data.tipo_oferta === 'envio' || data.data.tipo_oferta === 'ambos');
+                            if(data.data.tipo_oferta === 'envio' || data.data.tipo_oferta === 'ambos'){
+                                this.shippingFree = true;
+                            }
                             this.couponApplied = true;
                             this.couponMsg = data.msg;
                         } else {
-                            this.discount = 0; this.shippingFree = false; this.couponApplied = false;
+                            this.discount = 0;
+                            this.shippingFree = false;
+                            this.couponApplied = false;
                             this.couponMsg = data.msg; 
                         }
-                        this.renderPayPal(); 
+                        this.renderPayPal();
                     });
                 },
 
                 procesarImagen(img) {
                     if (!img) return 'https://via.placeholder.com/150';
                     if (img.includes('http') || img.includes('imgProd/')) return img;
-                    return 'admin/imgProd/' + img; // Ruta corregida
+                    return 'admin/imgProd/' + img; // Ruta corregida para Dashboard
                 },
 
                 getSubtotal() {
                     return this.cart.reduce((s, i) => s + (i.precio * i.qty), 0);
                 },
 
-                // Lógica de suma corregida
+                // 5. Total corregido: (Subtotal - Descuento) + Envío
                 getTotal() {
-                    let envioActual = this.shippingFree ? 0 : this.shippingCost;
-                    let total = (this.getSubtotal() - this.discount) + envioActual;
+                    let envio = this.shippingFree ? 0 : this.shippingCost;
+                    let total = (this.getSubtotal() - this.discount) + envio;
                     return total > 0 ? total.toFixed(2) : "0.00";
                 },
 
@@ -257,7 +276,7 @@ require_once 'api/conexion.php';
                                   this.cliente.email.includes('@') && 
                                   this.cliente.telefono.length >= 10 && 
                                   this.cliente.direccion.length > 5 &&
-                                  this.cliente.estado !== ''; // Estado obligatorio
+                                  this.cliente.estado !== ''; // Agregado validación de estado
                     
                     let registro = true;
                     if (!this.userLoggedIn && this.crearCuenta) {
@@ -267,19 +286,6 @@ require_once 'api/conexion.php';
                     return basicos && registro;
                 },
 
-                trackAbandonment() {
-                    if(!this.cliente.email.includes('@')) return;
-                    fetch('api/guardar_intento.php', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            email: this.cliente.email,
-                            nombre: this.cliente.nombre,
-                            cart: this.cart
-                        })
-                    });
-                }
-                
                 renderPayPal() {
                     const container = document.getElementById('paypal-button-container');
                     if(container) container.innerHTML = '';
@@ -299,6 +305,7 @@ require_once 'api/conexion.php';
                             return actions.order.capture().then((details) => {
                                 let payload = {
                                     orderID: data.orderID,
+                                    payerID: details.payer.payer_id,
                                     cart: this.cart,
                                     total: this.getTotal(),
                                     cliente: this.cliente,
@@ -341,13 +348,12 @@ require_once 'api/conexion.php';
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="resetForms()"></div>
         <div x-show="showLoginModal" x-transition class="relative bg-white dark:bg-gray-800 rounded-3xl p-8 max-w-md w-full shadow-2xl border border-gray-100 dark:border-gray-700">
             <button @click="resetForms()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-6 h-6"></i></button>
-
             <div x-show="loginView === 'login'">
                 <h3 class="text-2xl font-black text-center mb-6 uppercase text-perpetua-blue dark:text-perpetua-aqua" x-text="t[lang].welcome"></h3>
                 <div class="space-y-4">
                     <div>
                         <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].email"></label>
-                        <input type="email" x-model="loginData.email" @blur="trackAbandonment()" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
+                        <input type="email" x-model="loginData.email" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
                     </div>
                     <div>
                         <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].pass"></label>
@@ -360,7 +366,6 @@ require_once 'api/conexion.php';
                     <button @click="loginCliente()" class="w-full btn-gradient text-white py-3 rounded-xl font-bold uppercase tracking-widest shadow-lg" x-text="t[lang].loginAction"></button>
                 </div>
             </div>
-            
             <div x-show="loginView === 'recover'">
                 <h3 class="text-xl font-black text-center mb-2 uppercase text-gray-700 dark:text-white" x-text="t[lang].recoverTitle"></h3>
                 <p class="text-xs text-center text-gray-400 mb-6" x-text="t[lang].recoverDesc"></p>
@@ -369,7 +374,7 @@ require_once 'api/conexion.php';
                         <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].yourEmail"></label>
                         <input type="email" x-model="recEmail" class="w-full px-5 py-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-perpetua-aqua">
                     </div>
-                    <p x-show="recMsg" x-text="recMsg" class="text-center text-xs font-bold" :class="recMsg.includes('Error') || recMsg.includes('Invalid') ? 'text-red-500' : 'text-green-500'"></p>
+                    <p x-show="recMsg" x-text="recMsg" class="text-center text-xs font-bold" :class="recMsg.includes('Error') ? 'text-red-500' : 'text-green-500'"></p>
                     <button @click="recoverPassword()" class="w-full bg-slate-900 text-white py-3 rounded-xl font-bold uppercase tracking-widest hover:bg-perpetua-aqua transition" x-text="t[lang].sendLink"></button>
                     <button @click="loginView = 'login'" class="w-full text-center text-xs font-bold text-gray-400 hover:text-gray-600 py-2" x-text="t[lang].cancel"></button>
                 </div>
@@ -382,7 +387,6 @@ require_once 'api/conexion.php';
             <a href="index.php" class="flex items-center gap-2 text-perpetua-blue dark:text-perpetua-aqua font-bold hover:underline">
                 <i data-lucide="arrow-left" class="w-5 h-5"></i> <span x-text="t[lang].back"></span>
             </a>
-            
             <div class="flex items-center gap-4">
                 <button @click="switchLang()" class="px-3 py-1 rounded-full text-[10px] font-bold border-2 border-perpetua-blue text-perpetua-blue dark:text-perpetua-aqua transition-all">
                     <span x-text="t[lang].langBtn"></span>
@@ -391,8 +395,7 @@ require_once 'api/conexion.php';
             </div>
         </div>
 
-        <div class="mb-8 rounded-2xl border border-gray-200 bg-white p-4 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-sm" 
-             x-show="!userLoggedIn">
+        <div class="mb-8 rounded-2xl border border-gray-200 bg-white p-4 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-sm" x-show="!userLoggedIn">
             <div class="flex items-center gap-4">
                 <div class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-perpetua-blue"><i data-lucide="user" class="w-5 h-5"></i></div>
                 <div>
@@ -421,12 +424,12 @@ require_once 'api/conexion.php';
                         </div>
                         <div class="md:col-span-2 space-y-2">
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].email"></label>
-                            <input type="email" x-model="cliente.email" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
+                            <input type="email" x-model="cliente.email" @blur="trackAbandonment()" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
                         </div>
 
                         <div class="md:col-span-2 space-y-2">
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].state"></label>
-                            <select x-model="cliente.estado" @change="updateShipping()" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border border-gray-200 focus:ring-2 focus:ring-perpetua-aqua outline-none cursor-pointer">
+                            <select x-model="cliente.estado" @change="updateShipping()" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all cursor-pointer">
                                 <option value="" disabled selected>Selecciona tu Estado</option>
                                 <template x-for="edo in estadosMx" :key="edo">
                                     <option :value="edo" x-text="edo"></option>
@@ -440,8 +443,7 @@ require_once 'api/conexion.php';
                         </div>
                     </div>
 
-                    <div class="mt-8 pt-6 border-t border-dashed border-gray-300 dark:border-gray-700" 
-                         x-show="!userLoggedIn">
+                    <div class="mt-8 pt-6 border-t border-dashed border-gray-300 dark:border-gray-700" x-show="!userLoggedIn">
                         <label class="flex items-center gap-3 cursor-pointer select-none">
                             <div class="relative"><input type="checkbox" x-model="crearCuenta" class="sr-only peer"><div class="w-10 h-6 bg-gray-300 rounded-full peer peer-checked:bg-perpetua-aqua transition-all"></div><div class="absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-all peer-checked:translate-x-4"></div></div>
                             <span class="font-bold text-sm" x-text="t[lang].createAccount"></span>
@@ -455,7 +457,6 @@ require_once 'api/conexion.php';
                                 <label class="text-[10px] font-bold uppercase text-gray-400 ml-1" x-text="t[lang].confirmPass"></label>
                                 <input type="password" x-model="newAccount.confirm" class="w-full px-4 py-2 rounded-lg border focus:border-perpetua-aqua outline-none bg-white dark:bg-gray-800">
                             </div>
-                            <p class="md:col-span-2 text-xs text-red-500 font-bold" x-show="newAccount.password !== newAccount.confirm && newAccount.confirm.length > 0" x-text="t[lang].passMismatch"></p>
                         </div>
                     </div>
                 </div>
@@ -497,12 +498,10 @@ require_once 'api/conexion.php';
                             <span x-text="t[lang].subtotal"></span>
                             <span x-text="'$' + getSubtotal().toFixed(2)"></span>
                         </div>
-                        
                         <div class="flex justify-between text-perpetua-aqua font-bold text-[10px] uppercase" x-show="discount > 0">
                             <span x-text="t[lang].discount"></span>
                             <span x-text="'-$' + discount.toFixed(2)"></span>
                         </div>
-
                         <div class="flex justify-between text-gray-400 font-bold text-[10px] uppercase">
                             <span x-text="t[lang].shipping"></span>
                             <template x-if="shippingFree">
@@ -512,7 +511,6 @@ require_once 'api/conexion.php';
                                 <span class="text-slate-600 dark:text-slate-300" x-text="'$' + parseFloat(shippingCost).toFixed(2)"></span>
                             </template>
                         </div>
-
                         <div class="flex justify-between items-end pt-2">
                             <span class="font-black text-lg uppercase tracking-tighter" x-text="t[lang].total"></span>
                             <span class="font-black text-2xl text-perpetua-blue dark:text-perpetua-aqua" x-text="'$' + getTotal()"></span>
@@ -526,7 +524,6 @@ require_once 'api/conexion.php';
     <div x-show="isProcessing" class="fixed inset-0 bg-perpetua-blue/90 backdrop-blur-md z-[100] flex flex-col items-center justify-center text-white" x-cloak>
         <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-perpetua-aqua mb-4"></div>
         <p class="font-black uppercase tracking-widest animate-pulse" x-text="t[lang].processing"></p>
-        <p class="text-sm mt-2 opacity-70" x-text="t[lang].wait"></p>
     </div>
 
 </body>

@@ -1,13 +1,18 @@
 <?php
 /**
  * admin/index.php
- * Dashboard PRO: KPIs + Gráficas (Ventas, Ticket Promedio, Cupones) + Tops
+ * Dashboard PRO: KPIs + Gráficas + Top Listas + Notificador de Reseñas
  */
 
 require_once 'verificar_sesion.php';
 require_once '../api/conexion.php';
 
 try {
+    // --- NUEVO: CONTADOR DE RESEÑAS PENDIENTES ---
+    $sqlCountRes = "SELECT COUNT(*) as pendientes FROM kaiexper_perpetualife.resenas WHERE aprobada = 0";
+    $resCountRes = $conn->query($sqlCountRes);
+    $pendientesRes = $resCountRes->fetch_assoc()['pendientes'] ?? 0;
+
     // --- NUEVO: PRODUCTOS CON STOCK BAJO ---
     $umbralStock = 5;
     $sqlStockBajo = "SELECT nombre, stock FROM kaiexper_perpetualife.productos WHERE stock <= $umbralStock ORDER BY stock ASC";
@@ -26,7 +31,7 @@ try {
     $resKPI3 = $conn->query($sqlKPI3);
     $totalClientes = $resKPI3->fetch_assoc()['num_clientes'] ?? 0;
 
-    // --- 2. DATOS PARA GRÁFICAS DE TENDENCIA (Ventas y Ticket Promedio) ---
+    // --- 2. DATOS PARA GRÁFICAS DE TENDENCIA ---
     $sqlChart = "SELECT DATE_FORMAT(fecha, '%Y-%m') as mes, SUM(total) as total, AVG(total) as promedio 
                  FROM kaiexper_perpetualife.pedidos 
                  WHERE estado IN ('COMPLETADO', 'PAGADO') 
@@ -122,7 +127,7 @@ try {
             </p>
         </div>
         
-        <nav class="flex-1 px-4 space-y-3 overflow-y-auto mt-6">
+        <nav class="flex-1 px-4 space-y-3 overflow-y-auto mt-6 text-sm">
             <a href="index.php" class="flex items-center gap-3 text-cyan-700 font-bold bg-cyan-50 p-3 rounded-xl border border-cyan-100">
                 <i data-lucide="layout-dashboard"></i> Dashboard
             </a>
@@ -131,6 +136,18 @@ try {
             <a href="productos.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
                 <i data-lucide="package"></i> Productos
             </a>
+
+            <a href="resenas.php" class="flex items-center justify-between transition p-3 rounded-xl font-medium <?php echo ($pendientesRes > 0) ? 'text-yellow-700 bg-yellow-50 border border-yellow-100' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'; ?>">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="message-square"></i> Reseñas
+                </div>
+                <?php if($pendientesRes > 0): ?>
+                    <span class="bg-yellow-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">
+                        <?php echo $pendientesRes; ?>
+                    </span>
+                <?php endif; ?>
+            </a>
+
             <a href="cupones.php" class="flex items-center gap-3 text-slate-500 hover:text-slate-900 transition p-3 rounded-xl hover:bg-slate-50 font-medium">
                 <i data-lucide="ticket"></i> Cupones
             </a>
@@ -162,7 +179,6 @@ try {
     </aside>
 
     <main class="flex-1 p-4 md:p-8 overflow-y-auto w-full">
-        
         <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div class="flex items-center gap-4">
                 <button @click="sidebarOpen = true" class="md:hidden p-2 bg-white rounded-xl shadow-sm text-slate-600 hover:text-cyan-600">
@@ -188,7 +204,7 @@ try {
                 </div>
                 <div>
                     <h4 class="text-red-800 font-black uppercase text-sm tracking-widest">Atención: Inventario Crítico</h4>
-                    <p class="text-red-600 text-xs font-medium">Hay <?php echo $resStockBajo->num_rows; ?> productos que están a punto de agotarse.</p>
+                    <p class="text-red-600 text-xs font-medium">Hay <?php echo $resStockBajo->num_rows; ?> productos agotándose.</p>
                 </div>
             </div>
             <div class="hidden md:flex gap-2 overflow-x-auto max-w-md">
@@ -295,7 +311,7 @@ try {
                             </div>
                             <?php endwhile; ?>
                         <?php else: ?>
-                            <p class="text-xs text-slate-400 italic">Esperando primeras ventas...</p>
+                            <p class="text-xs text-slate-400 italic">Sin ventas registradas.</p>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -307,7 +323,7 @@ try {
                 <h3 class="font-bold text-lg text-slate-700 mb-4 flex items-center gap-2">
                     <i data-lucide="crown" class="text-purple-500 w-5 h-5"></i> Clientes VIP
                 </h3>
-                <div class="overflow-x-auto">
+                <div class="overflow-x-auto text-sm">
                     <table class="w-full text-left">
                         <thead class="bg-slate-50">
                             <tr>
@@ -320,9 +336,9 @@ try {
                             <?php if($resTopClient && $resTopClient->num_rows > 0): ?>
                                 <?php while($vip = $resTopClient->fetch_assoc()): ?>
                                 <tr>
-                                    <td class="p-3 text-sm font-bold text-slate-700"><?php echo $vip['nombre']; ?></td>
+                                    <td class="p-3 font-bold text-slate-700"><?php echo $vip['nombre']; ?></td>
                                     <td class="p-3 text-xs text-slate-500"><?php echo $vip['compras']; ?> órdenes</td>
-                                    <td class="p-3 text-sm font-black text-emerald-600 text-right">$<?php echo number_format($vip['gastado'], 0); ?></td>
+                                    <td class="p-3 font-black text-emerald-600 text-right">$<?php echo number_format($vip['gastado'], 0); ?></td>
                                 </tr>
                                 <?php endwhile; ?>
                             <?php else: ?>
@@ -340,7 +356,7 @@ try {
                     </h3>
                     <a href="pedidos.php" class="text-xs font-bold text-cyan-600 hover:underline">Ver todo</a>
                 </div>
-                <div class="overflow-x-auto">
+                <div class="overflow-x-auto text-sm">
                     <table class="w-full text-left">
                         <tbody class="divide-y divide-slate-100">
                             <?php if($resRecientes && $resRecientes->num_rows > 0): ?>
@@ -375,20 +391,19 @@ try {
     <script>
         lucide.createIcons();
 
+        const meses = <?php echo json_encode($meses); ?>;
+
         // 1. Gráfica de Ventas
-        const salesCtx = document.getElementById('salesChart');
-        new Chart(salesCtx, {
+        new Chart(document.getElementById('salesChart'), {
             type: 'line',
             data: {
-                labels: <?php echo json_encode($meses); ?>,
+                labels: meses,
                 datasets: [{
                     label: 'Ventas ($)',
                     data: <?php echo json_encode($ventas); ?>,
                     borderColor: '#06b6d4',
                     backgroundColor: 'rgba(6, 182, 212, 0.1)',
                     borderWidth: 3,
-                    pointBackgroundColor: '#fff',
-                    pointBorderColor: '#06b6d4',
                     pointRadius: 4,
                     tension: 0.4,
                     fill: true
@@ -406,19 +421,16 @@ try {
         });
 
         // 2. Gráfica de Ticket Promedio
-        const avgCtx = document.getElementById('avgTicketChart');
-        new Chart(avgCtx, {
+        new Chart(document.getElementById('avgTicketChart'), {
             type: 'line',
             data: {
-                labels: <?php echo json_encode($meses); ?>,
+                labels: meses,
                 datasets: [{
                     label: 'Ticket Promedio ($)',
                     data: <?php echo json_encode($ticketsAvg); ?>,
                     borderColor: '#3b82f6',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     borderWidth: 3,
-                    pointBackgroundColor: '#fff',
-                    pointBorderColor: '#3b82f6',
                     pointRadius: 4,
                     tension: 0.4,
                     fill: true
@@ -435,16 +447,14 @@ try {
             }
         });
 
-        // 3. Gráfica de Cupones (Dona)
-        const couponCtx = document.getElementById('couponChart');
-        new Chart(couponCtx, {
+        // 3. Gráfica de Cupones
+        new Chart(document.getElementById('couponChart'), {
             type: 'doughnut',
             data: {
                 labels: ['Con Cupón', 'Sin Cupón'],
                 datasets: [{
                     data: [<?php echo $conCupon; ?>, <?php echo $sinCupon; ?>],
                     backgroundColor: ['#a855f7', '#e2e8f0'],
-                    hoverOffset: 4,
                     borderWidth: 0
                 }]
             },

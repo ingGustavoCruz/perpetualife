@@ -545,7 +545,52 @@ if ($resultado && $resultado->num_rows > 0) {
             </div>
         </div>
     </template>
+    <?php
+    // Consulta para obtener las reseñas aprobadas
+    $sqlResenas = "SELECT * FROM kaiexper_perpetualife.resenas WHERE aprobada = 1 ORDER BY fecha DESC LIMIT 6";
+    $resVisibles = $conn->query($sqlResenas);
+    ?>
 
+    <section class="py-20 bg-slate-50 dark:bg-gray-900 transition-colors duration-500">
+        <div class="max-w-6xl mx-auto px-4 text-center">
+            <h2 class="text-3xl font-black text-perpetua-blue dark:text-perpetua-aqua mb-2 uppercase tracking-tight">Voces Perpetualife</h2>
+            <p class="text-gray-500 dark:text-gray-400 mb-12 font-medium">Lo que nuestra comunidad dice sobre nosotros</p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <?php if($resVisibles && $resVisibles->num_rows > 0): ?>
+                    <?php while($r = $resVisibles->fetch_assoc()): ?>
+                    <div class="glass p-8 rounded-[2.5rem] shadow-xl border-t-8 border-yellow-400 text-left flex flex-col justify-between h-full transition-transform hover:-translate-y-2">
+                        <div>
+                            <div class="flex gap-1 mb-4">
+                                <?php for($i=1; $i<=5; $i++): ?>
+                                    <i data-lucide="star" class="w-4 h-4 <?php echo $i <= $r['estrellas'] ? 'fill-yellow-400 text-yellow-400' : 'text-slate-200 dark:text-gray-700'; ?>"></i>
+                                <?php endfor; ?>
+                            </div>
+                            <p class="text-slate-700 dark:text-gray-300 italic mb-6 leading-relaxed">"<?php echo htmlspecialchars($r['comentario']); ?>"</p>
+                        </div>
+                        
+                        <div class="flex items-center gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-gray-800">
+                            <div class="w-10 h-10 bg-perpetua-blue/10 rounded-full flex items-center justify-center text-perpetua-blue dark:text-perpetua-aqua font-bold">
+                                <?php echo substr($r['cliente_nombre'], 0, 1); ?>
+                            </div>
+                            <div>
+                                <p class="text-xs font-black text-slate-900 dark:text-white uppercase"><?php echo $r['cliente_nombre']; ?></p>
+                                <div class="flex items-center gap-1">
+                                    <i data-lucide="shield-check" class="w-3 h-3 text-emerald-500"></i>
+                                    <span class="text-[9px] font-bold text-emerald-600 uppercase tracking-tighter">Comprador Verificado</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endwhile; ?>
+                <?php else: ?>
+                    <div class="col-span-full py-10 opacity-40">
+                        <p class="text-sm italic">Esperando tus primeras reseñas aprobadas...</p>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </section>
     <footer class="py-12 border-t border-perpetua-blue/10 flex flex-col items-center justify-center bg-white dark:bg-gray-900 transition-colors gap-6">
     
         <div class="flex flex-wrap justify-center gap-6 md:gap-10">

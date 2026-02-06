@@ -1,0 +1,23 @@
+# 1. Impedir la ejecución de scripts
+Options -ExecCGI
+AddHandler cgi-script .php .php3 .php4 .phtml .pl .py .jsp .asp .htm .html .sh .cgi
+
+# 2. Desactivar el motor de PHP en esta carpeta
+<IfModule mod_php5.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+
+# 3. Forzar que solo se sirvan archivos de imagen
+<FilesMatch "\.(?i:php|php3|phtml|sh|py|pl|cgi)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# 4. Evitar el listado de archivos (Browsing)
+Options -Indexes

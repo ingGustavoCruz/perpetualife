@@ -145,13 +145,14 @@ try {
     }
 
     // --- 4. INSERTAR PEDIDO ---
+    // Cambia esto en api/confirmar_pago.php
     $sql_pedido = "INSERT INTO kaiexper_perpetualife.pedidos 
-                   (cliente_id, fecha, total, estado, metodo_pago, id_transaccion, paypal_order_id, moneda) 
-                   VALUES (?, NOW(), ?, 'COMPLETADO', 'PayPal', ?, ?, 'MXN')";
-                   
+                (cliente_id, fecha, total, estado, metodo_pago, id_transaccion, paypal_order_id, moneda, cupon) 
+                VALUES (?, NOW(), ?, 'COMPLETADO', 'PayPal', ?, ?, 'MXN', ?)";
+                
     $stmt = $conn->prepare($sql_pedido);
-    // Usamos $totalCalculado en lugar de $data['total']
-    $stmt->bind_param("idss", $cliente_id, $totalCalculado, $orderID, $orderID);
+    // Agregamos una 's' al final del bind y la variable $cuponCodigo (o $cupon que recibes en el JSON)
+    $stmt->bind_param("idsss", $cliente_id, $totalCalculado, $orderID, $orderID, $cuponCodigo);
     
     if (!$stmt->execute()) throw new Exception("Error al guardar pedido: " . $stmt->error);
     
