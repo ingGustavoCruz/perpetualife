@@ -1,7 +1,7 @@
 <?php
 /**
  * completarCompra.php - Perpetualife
- * Checkout Final: Persistencia + Cupones + Envío Dinámico + Rastreo de Carrito
+ * Checkout Final: Validación Regex + Sanitización Frontend
  */
 require_once 'api/conexion.php'; 
 ?>
@@ -36,9 +36,12 @@ require_once 'api/conexion.php';
                 lang: localStorage.getItem('lang') || 'es',
                 cart: JSON.parse(localStorage.getItem('cart')) || [],
                 
-                // 1. Agregamos 'estado' al objeto cliente
+                // Datos del cliente
                 cliente: { nombre: '', email: '', telefono: '', direccion: '', estado: '' },
                 
+                // Estados de validación visual
+                errors: { email: false, telefono: false },
+
                 userLoggedIn: false, 
                 showLoginModal: false,
                 loginView: 'login',
@@ -56,12 +59,12 @@ require_once 'api/conexion.php';
                 couponMsg: '',
                 shippingFree: false, 
 
-                // 2. Variables para Envío Dinámico y Lista de Estados
-                shippingCost: 150, // Iniciamos con el valor de Zona Local
+                shippingCost: 150, 
                 estadosMx: ["Aguascalientes", "Baja California", "Baja California Sur", "Campeche", "Chiapas", "Chihuahua", "Ciudad de México", "Coahuila", "Colima", "Durango", "Estado de México", "Guanajuato", "Guerrero", "Hidalgo", "Jalisco", "Michoacán", "Morelos", "Nayarit", "Nuevo León", "Oaxaca", "Puebla", "Querétaro", "Quintana Roo", "San Luis Potosí", "Sinaloa", "Sonora", "Tabasco", "Tamaulipas", "Tlaxcala", "Veracruz", "Yucatán", "Zacatecas"],
 
                 isProcessing: false,
 
+                // Textos y traducciones
                 t: {
                     es: {
                         back: 'Volver a la tienda',
@@ -74,7 +77,7 @@ require_once 'api/conexion.php';
                         yourEmail: 'Tu Correo Registrado', sendLink: 'Enviar Enlace', cancel: 'Cancelar y Volver',
                         shippingTitle: 'Datos de Envío',
                         name: 'Nombre Completo', phone: 'Teléfono', address: 'Dirección de Entrega',
-                        state: 'Estado / Entidad', // Traducción nueva
+                        state: 'Estado / Entidad',
                         createAccount: 'Crear una cuenta para futuras compras',
                         confirmPass: 'Confirmar Contraseña',
                         passMismatch: 'Las contraseñas no coinciden',
@@ -86,9 +89,11 @@ require_once 'api/conexion.php';
                         processing: 'Procesando tu pedido...', wait: 'No cierres esta ventana',
                         langBtn: 'English',
                         alertEmpty: 'Tu carrito está vacío',
-                        alertData: 'Por favor, completa todos los datos obligatorios.',
+                        alertData: 'Por favor, verifica los datos marcados en rojo.',
                         welcomeUser: '¡Bienvenido! Tus datos se han cargado.',
-                        couponLabel: 'Código de Descuento', apply: 'Aplicar', discount: 'Descuento', invalidCoupon: 'Cupón no válido'
+                        couponLabel: 'Código de Descuento', apply: 'Aplicar', discount: 'Descuento', invalidCoupon: 'Cupón no válido',
+                        errPhone: 'Debe ser un número de 10 dígitos exactos.',
+                        errEmail: 'Formato de correo inválido.'
                     },
                     en: {
                         back: 'Back to store',
@@ -101,7 +106,7 @@ require_once 'api/conexion.php';
                         yourEmail: 'Your Registered Email', sendLink: 'Send Link', cancel: 'Cancel',
                         shippingTitle: 'Shipping Details',
                         name: 'Full Name', phone: 'Phone Number', address: 'Shipping Address',
-                        state: 'State / Province', // Traducción nueva
+                        state: 'State / Province',
                         createAccount: 'Create an account for future purchases',
                         confirmPass: 'Confirm Password',
                         passMismatch: 'Passwords do not match',
@@ -113,9 +118,11 @@ require_once 'api/conexion.php';
                         processing: 'Processing your order...', wait: 'Do not close this window',
                         langBtn: 'Español',
                         alertEmpty: 'Your cart is empty',
-                        alertData: 'Please complete all required fields.',
+                        alertData: 'Please check the fields marked in red.',
                         welcomeUser: 'Welcome! Your data has been loaded.',
-                        couponLabel: 'Discount Code', apply: 'Apply', discount: 'Discount', invalidCoupon: 'Invalid coupon'
+                        couponLabel: 'Discount Code', apply: 'Apply', discount: 'Discount', invalidCoupon: 'Invalid coupon',
+                        errPhone: 'Must be exactly 10 digits.',
+                        errEmail: 'Invalid email format.'
                     }
                 },
 
@@ -138,7 +145,47 @@ require_once 'api/conexion.php';
                     this.renderPayPal();
                 },
 
-                // 3. Función para actualizar costo de envío
+                // --- VALIDACIONES REGEX ---
+                validateEmail(email) {
+                    const regexEmail = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+                    return regexEmail.test(email);
+                },
+
+                validatePhone(phone) {
+                    // Aseguramos que solo sean números y exactamente 10
+                    const regexTel = /^\d{10}$/; 
+                    return regexTel.test(phone);
+                },
+
+                // --- SANITIZACIÓN FRONTEND (Seguridad básica) ---
+                escapeHtml(text) {
+                    if (!text) return text;
+                    const map = {
+                        '&': '&amp;',
+                        '<': '&lt;',
+                        '>': '&gt;',
+                        '"': '&quot;',
+                        "'": '&#039;'
+                    };
+                    return text.toString().replace(/[&<>"']/g, function(m) { return map[m]; });
+                },
+
+                // Prepara el objeto seguro para enviar
+                sanitizePayload(dataObj) {
+                    // Crea una copia profunda básica para no mutar el estado visual
+                    let clean = JSON.parse(JSON.stringify(dataObj));
+                    
+                    // Limpiamos strings específicos
+                    if(clean.cliente) {
+                        clean.cliente.nombre = this.escapeHtml(clean.cliente.nombre);
+                        clean.cliente.direccion = this.escapeHtml(clean.cliente.direccion);
+                        // Email y Teléfono se validan con regex, pero igual limpiamos por si acaso
+                        clean.cliente.email = clean.cliente.email.trim();
+                        clean.cliente.telefono = clean.cliente.telefono.trim();
+                    }
+                    return clean;
+                },
+
                 updateShipping() {
                     if(!this.cliente.estado) return;
                     fetch('api/get_shipping.php', {
@@ -153,9 +200,8 @@ require_once 'api/conexion.php';
                     });
                 },
 
-                // 4. Función para rastrear carritos abandonados
                 trackAbandonment() {
-                    if(!this.cliente.email.includes('@')) return;
+                    if(!this.validateEmail(this.cliente.email)) return;
                     fetch('api/guardar_intento.php', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
@@ -205,6 +251,7 @@ require_once 'api/conexion.php';
                             this.crearCuenta = false;
                             this.resetForms(); 
                             alert(this.t[this.lang].welcomeUser);
+                            this.renderPayPal(); // Re-renderizar para actualizar el estado del botón
                         } else {
                             this.loginError = data.message;
                         }
@@ -214,26 +261,27 @@ require_once 'api/conexion.php';
 
                 recoverPassword() {
                     this.recMsg = '';
-                    if(!this.recEmail.includes('@')) { this.recMsg = 'Invalid Email'; return; }
+                    if(!this.validateEmail(this.recEmail)) { this.recMsg = 'Invalid Email'; return; }
                     fetch('api/solicitar_reset.php', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ email: this.recEmail })
                     })
                     .then(res => res.json())
-                    .then(data => {
-                        this.recMsg = data.message;
-                    })
+                    .then(data => { this.recMsg = data.message; })
                     .catch(err => { this.recMsg = "Error sending request"; });
                 },
 
                 applyCoupon() {
                     this.couponMsg = '';
                     if(!this.couponCode) return;
+                    // Sanitizamos cupón antes de enviar
+                    let safeCode = this.escapeHtml(this.couponCode);
+                    
                     fetch('api/validar_cupon.php', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ codigo: this.couponCode, total: this.getSubtotal() })
+                        body: JSON.stringify({ codigo: safeCode, total: this.getSubtotal() })
                     })
                     .then(res => res.json())
                     .then(data => {
@@ -257,26 +305,34 @@ require_once 'api/conexion.php';
                 procesarImagen(img) {
                     if (!img) return 'https://via.placeholder.com/150';
                     if (img.includes('http') || img.includes('imgProd/')) return img;
-                    return 'admin/imgProd/' + img; // Ruta corregida para Dashboard
+                    return 'admin/imgProd/' + img; 
                 },
 
                 getSubtotal() {
                     return this.cart.reduce((s, i) => s + (i.precio * i.qty), 0);
                 },
 
-                // 5. Total corregido: (Subtotal - Descuento) + Envío
                 getTotal() {
                     let envio = this.shippingFree ? 0 : this.shippingCost;
                     let total = (this.getSubtotal() - this.discount) + envio;
                     return total > 0 ? total.toFixed(2) : "0.00";
                 },
 
+                // --- VALIDACIÓN INTEGRAL ---
                 formValido() {
+                    // Validar formato de regex
+                    const isEmailValid = this.validateEmail(this.cliente.email);
+                    const isPhoneValid = this.validatePhone(this.cliente.telefono);
+                    
+                    // Actualizar estado de errores para mostrar en UI
+                    this.errors.email = !isEmailValid && this.cliente.email.length > 0;
+                    this.errors.telefono = !isPhoneValid && this.cliente.telefono.length > 0;
+
                     let basicos = this.cliente.nombre.length > 2 && 
-                                  this.cliente.email.includes('@') && 
-                                  this.cliente.telefono.length >= 10 && 
+                                  isEmailValid && 
+                                  isPhoneValid && 
                                   this.cliente.direccion.length > 5 &&
-                                  this.cliente.estado !== ''; // Agregado validación de estado
+                                  this.cliente.estado !== '';
                     
                     let registro = true;
                     if (!this.userLoggedIn && this.crearCuenta) {
@@ -303,20 +359,25 @@ require_once 'api/conexion.php';
                         onApprove: (data, actions) => {
                             this.isProcessing = true;
                             return actions.order.capture().then((details) => {
+                                // PREPARAR PAYLOAD SANITIZADO
                                 let payload = {
                                     orderID: data.orderID,
                                     payerID: details.payer.payer_id,
                                     cart: this.cart,
                                     total: this.getTotal(),
-                                    cliente: this.cliente,
+                                    cliente: this.cliente, // sanitizePayload se llama abajo o en backend idealmente, pero aquí enviamos limpio
                                     crear_cuenta: !this.userLoggedIn && this.crearCuenta,
                                     new_password: this.newAccount.password,
                                     cupon: this.couponApplied ? this.couponCode : null
                                 };
+
+                                // Aplicamos sanitización extra antes de enviar el fetch
+                                let safePayload = this.sanitizePayload(payload);
+
                                 return fetch('api/confirmar_pago.php', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify(payload)
+                                    body: JSON.stringify(safePayload)
                                 })
                                 .then(res => res.json())
                                 .then(res => {
@@ -340,6 +401,9 @@ require_once 'api/conexion.php';
         [x-cloak] { display: none !important; }
         .btn-gradient { background: linear-gradient(135deg, #1e3a8a 0%, #22d3ee 100%); transition: all 0.3s ease; }
         .btn-gradient:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(34, 211, 238, 0.4); }
+        /* Estilos para errores */
+        .input-error { border-color: #ef4444 !important; background-color: #fef2f2 !important; }
+        .dark .input-error { background-color: #450a0a !important; }
     </style>
 </head>
 <body class="min-h-screen transition-colors duration-500 bg-slate-50 dark:bg-gray-900 text-gray-900 dark:text-white font-sans">
@@ -418,13 +482,23 @@ require_once 'api/conexion.php';
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].name"></label>
                             <input type="text" x-model="cliente.nombre" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
                         </div>
+                        
                         <div class="space-y-2">
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].phone"></label>
-                            <input type="tel" x-model="cliente.telefono" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
+                            <input type="tel" x-model="cliente.telefono" maxlength="10" 
+                                   :class="{'input-error': errors.telefono}"
+                                   @input="cliente.telefono = cliente.telefono.replace(/[^0-9]/g, '')" 
+                                   class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
+                            <p x-show="errors.telefono" x-text="t[lang].errPhone" class="text-[10px] text-red-500 font-bold ml-2"></p>
                         </div>
+
                         <div class="md:col-span-2 space-y-2">
                             <label class="text-xs font-bold uppercase text-gray-400 ml-2" x-text="t[lang].email"></label>
-                            <input type="email" x-model="cliente.email" @blur="trackAbandonment()" class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
+                            <input type="email" x-model="cliente.email" 
+                                   :class="{'input-error': errors.email}"
+                                   @blur="trackAbandonment()" 
+                                   class="w-full px-5 py-4 rounded-2xl bg-white/50 dark:bg-gray-800 border focus:ring-2 focus:ring-perpetua-aqua outline-none transition-all">
+                            <p x-show="errors.email" x-text="t[lang].errEmail" class="text-[10px] text-red-500 font-bold ml-2"></p>
                         </div>
 
                         <div class="md:col-span-2 space-y-2">

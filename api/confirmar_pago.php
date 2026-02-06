@@ -1,63 +1,77 @@
 <?php
 /**
  * api/confirmar_pago.php
- * VERSIÓN BLINDADA: Recálculo de totales, validación de cupones server-side y control de stock.
+ * VERSIÓN FINAL DE PRODUCCIÓN
+ * - Seguridad: Prepared Statements (Blindado contra SQL Injection)
+ * - Negocio: Validación de Stock Real + Cálculo de Envío Dinámico (JSON)
  */
+
+// 1. CONFIGURACIÓN INICIAL
 require_once 'conexion.php';
-require_once 'mailer.php'; // Asegúrate de que este archivo existe y funciona como ya lo tienes
+require_once 'mailer.php'; 
 
 header('Content-Type: application/json');
 
+// Función helper para logs de errores/transacciones
 function registrarLog($mensaje) {
-    file_put_contents('log_errores.txt', date('Y-m-d H:i:s') . " - " . $mensaje . "\n", FILE_APPEND);
+    $rutaLog = __DIR__ . '/log_transacciones.txt';
+    file_put_contents($rutaLog, date('Y-m-d H:i:s') . " - " . $mensaje . "\n", FILE_APPEND);
 }
 
+// 2. RECEPCIÓN DE DATOS
 $input = file_get_contents('php://input');
 $data = json_decode($input, true);
 
 if (!$data) {
-    registrarLog("Error: No llegaron datos JSON.");
-    echo json_encode(['status' => 'error', 'message' => 'No se recibieron datos']);
+    registrarLog("Error: JSON vacío o inválido.");
+    echo json_encode(['status' => 'error', 'message' => 'Datos inválidos']);
     exit;
 }
 
-// Datos recibidos del Frontend
-$orderID = $data['orderID'] ?? 'MANUAL';
+// Extracción de variables (sin sanitizar aquí, lo hará bind_param después)
+$orderID = $data['orderID'] ?? 'MANUAL-' . time();
 $cart = $data['cart'] ?? [];
 $cliente = $data['cliente'] ?? [];
 $crearCuenta = $data['crear_cuenta'] ?? false;
 $newPassword = $data['new_password'] ?? '';
-$cuponCodigo = isset($data['cupon']) ? strtoupper(trim($conn->real_escape_string($data['cupon']))) : null;
+$cuponCodigo = isset($data['cupon']) ? strtoupper(trim($data['cupon'])) : null;
 
-registrarLog("Iniciando proceso para Cliente: " . ($cliente['email'] ?? 'Desconocido'));
+// Validación mínima
+if (empty($cliente['email']) || empty($cliente['estado'])) {
+    echo json_encode(['status' => 'error', 'message' => 'Faltan datos del cliente (Email o Estado)']);
+    exit;
+}
+
+registrarLog("Iniciando pedido para: " . $cliente['email'] . " | Estado: " . $cliente['estado']);
 
 $conn->begin_transaction();
 
 try {
-    // --- 1. SEGURIDAD: RECÁLCULO DE TOTALES ---
+    // =========================================================================
+    // PASO 1: VALIDACIÓN DE PRODUCTOS Y STOCK (Server Side)
+    // =========================================================================
     $subtotalReal = 0;
-    $itemsProcesados = []; // Aquí guardaremos los datos reales de la BD para usarlos después
+    $itemsProcesados = []; 
+
+    $stmtProd = $conn->prepare("SELECT id, nombre, precio, stock FROM productos WHERE id = ?");
 
     foreach ($cart as $item) {
         $idProd = intval($item['id']);
         $qty = intval($item['qty']);
+        if($qty <= 0) continue;
 
-        // Consultamos precio y stock REAL en la base de datos
-        $stmtProd = $conn->prepare("SELECT id, nombre, precio, stock FROM kaiexper_perpetualife.productos WHERE id = ?");
         $stmtProd->bind_param("i", $idProd);
         $stmtProd->execute();
         $resProd = $stmtProd->get_result();
         
         if ($prodBD = $resProd->fetch_assoc()) {
-            // Validar Stock
             if ($prodBD['stock'] < $qty) {
-                throw new Exception("Stock insuficiente para el producto: " . $prodBD['nombre']);
+                throw new Exception("Stock insuficiente para: " . $prodBD['nombre']);
             }
 
             $precioReal = floatval($prodBD['precio']);
             $subtotalReal += ($precioReal * $qty);
 
-            // Guardamos para usar más tarde (sin confiar en el frontend)
             $itemsProcesados[] = [
                 'id' => $prodBD['id'],
                 'nombre' => $prodBD['nombre'],
@@ -65,34 +79,76 @@ try {
                 'cantidad' => $qty
             ];
         } else {
-            throw new Exception("Producto ID $idProd no encontrado en la base de datos.");
+            throw new Exception("Producto ID $idProd no válido.");
         }
-        $stmtProd->close();
+    }
+    $stmtProd->close();
+
+    if(empty($itemsProcesados)) throw new Exception("Carrito vacío tras validación.");
+
+
+    // =========================================================================
+    // PASO 2: CÁLCULO DE ENVÍO DINÁMICO (Tabla config_envios)
+    // =========================================================================
+    $costoEnvio = 0;
+    $zonaEncontrada = false;
+    $estadoCliente = $cliente['estado']; // Ej: "Coahuila"
+
+    // Consultamos la tabla de configuración
+    $resEnvios = $conn->query("SELECT id, costo, estados FROM config_envios ORDER BY costo ASC");
+
+    while ($row = $resEnvios->fetch_assoc()) {
+        // La columna 'estados' es TEXT pero contiene un JSON
+        $listaEstados = json_decode($row['estados'], true);
+        
+        if (is_array($listaEstados)) {
+            // Buscamos coincidencia exacta con lo que envía el selector
+            if (in_array($estadoCliente, $listaEstados)) {
+                $costoEnvio = floatval($row['costo']);
+                $zonaEncontrada = true;
+                registrarLog("Zona Detectada: ID {$row['id']} - Costo: $$costoEnvio");
+                break; 
+            }
+        }
     }
 
-    // --- 2. SEGURIDAD: VALIDACIÓN Y APLICACIÓN DE CUPÓN ---
+    // Fallback: Si no se encuentra, usar Zona Nacional (ID 3)
+    if (!$zonaEncontrada) {
+        $resDefault = $conn->query("SELECT costo FROM config_envios WHERE id = 3");
+        if ($rowDef = $resDefault->fetch_assoc()) {
+            $costoEnvio = floatval($rowDef['costo']);
+            registrarLog("Zona no encontrada. Aplicando tarifa default (ID 3): $$costoEnvio");
+        } else {
+            $costoEnvio = 350.00; // Último recurso hardcoded
+        }
+    }
+
+
+    // =========================================================================
+    // PASO 3: CUPONES Y DESCUENTOS
+    // =========================================================================
     $descuentoReal = 0;
     $idCuponAplicado = null;
-    $infoCupon = "Ninguno";
-
+    $infoCupon = "";
+    
     if ($cuponCodigo) {
-        $sqlCup = "SELECT * FROM kaiexper_perpetualife.cupones WHERE codigo = '$cuponCodigo' LIMIT 1";
-        $resCup = $conn->query($sqlCup);
+        $stmtCup = $conn->prepare("SELECT * FROM cupones WHERE codigo = ? LIMIT 1");
+        $stmtCup->bind_param("s", $cuponCodigo);
+        $stmtCup->execute();
+        $resCup = $stmtCup->get_result();
 
-        if ($resCup && $rowCup = $resCup->fetch_assoc()) {
+        if ($rowCup = $resCup->fetch_assoc()) {
             $hoy = date('Y-m-d');
-            
-            // Validaciones estrictas del servidor
-            $esActivo = $rowCup['estado_manual'] === 'activo';
-            $esVigente = $rowCup['fecha_vencimiento'] >= $hoy;
-            $hayStock = ($rowCup['limite_uso'] == 0) || ($rowCup['usos_actuales'] < $rowCup['limite_uso']);
+            // Validaciones de vigencia
+            if ($rowCup['estado_manual'] === 'activo' && 
+                $rowCup['fecha_vencimiento'] >= $hoy && 
+                ($rowCup['limite_uso'] == 0 || $rowCup['usos_actuales'] < $rowCup['limite_uso'])) {
 
-            if ($esActivo && $esVigente && $hayStock) {
                 $idCuponAplicado = $rowCup['id'];
-                $tipoOferta = $rowCup['tipo_oferta'];
                 $infoCupon = $cuponCodigo;
+                $tipoOferta = $rowCup['tipo_oferta'];
 
-                // Calcular descuento monetario
+                // Descuento monetario
                 if ($tipoOferta === 'descuento' || $tipoOferta === 'ambos') {
                     if ($rowCup['tipo'] === 'porcentaje') {
                         $descuentoReal = $subtotalReal * ($rowCup['descuento'] / 100);
@@ -100,80 +156,91 @@ try {
                         $descuentoReal = floatval($rowCup['descuento']);
                     }
                 }
-                // Nota: Si es solo "envio", el descuento monetario es 0, pero ya asumimos envío gratis en la lógica de negocio.
-            } else {
-                registrarLog("Cupón inválido o expirado intentado: $cuponCodigo");
+
+                // Envío gratis
+                if ($tipoOferta === 'envio' || $tipoOferta === 'ambos') {
+                    $costoEnvio = 0; 
+                    $infoCupon .= " (Envío Gratis)";
+                }
             }
         }
+        $stmtCup->close();
     }
 
-    // Total final blindado
-    $totalCalculado = $subtotalReal - $descuentoReal;
+    // CÁLCULO FINAL DEL TOTAL A COBRAR
+    $totalCalculado = ($subtotalReal - $descuentoReal) + $costoEnvio;
     if ($totalCalculado < 0) $totalCalculado = 0;
 
-    registrarLog("Subtotal Real: $subtotalReal | Descuento: $descuentoReal | Total Final: $totalCalculado");
+    registrarLog("Sub: $subtotalReal | Desc: $descuentoReal | Env: $costoEnvio | Total: $totalCalculado");
 
 
-    // --- 3. GESTIÓN DE CLIENTE ---
-    $email = $conn->real_escape_string($cliente['email']);
-    $nombre = $conn->real_escape_string($cliente['nombre']);
-    $telefono = $conn->real_escape_string($cliente['telefono']);
-    $direccion = $conn->real_escape_string($cliente['direccion']);
-    $estadoCliente = $conn->real_escape_string($cliente['estado'] ?? '');
-    
-    $check = $conn->query("SELECT id FROM kaiexper_perpetualife.clientes WHERE email = '$email'");
-    
-    if ($check->num_rows > 0) {
-        $row = $check->fetch_assoc();
+    // =========================================================================
+    // PASO 4: GUARDAR/ACTUALIZAR CLIENTE
+    // =========================================================================
+    $email = $cliente['email'];
+    $nombre = $cliente['nombre'];
+    $telefono = $cliente['telefono'];
+    $direccion = $cliente['direccion'];
+    $estadoClienteDB = $cliente['estado']; // Variable renombrada para evitar conflictos
+
+    // Verificamos si existe
+    $stmtCheck = $conn->prepare("SELECT id FROM clientes WHERE email = ?");
+    $stmtCheck->bind_param("s", $email);
+    $stmtCheck->execute();
+    $resCheck = $stmtCheck->get_result();
+
+    if ($row = $resCheck->fetch_assoc()) {
         $cliente_id = $row['id'];
-        
+        // Update
         if ($crearCuenta && !empty($newPassword)) {
             $passHash = password_hash($newPassword, PASSWORD_DEFAULT);
-            $conn->query("UPDATE kaiexper_perpetualife.clientes SET nombre='$nombre', telefono='$telefono', estado='$estadoCliente', direccion='$direccion', password='$passHash' WHERE id=$cliente_id");
+            $stmtUpd = $conn->prepare("UPDATE clientes SET nombre=?, telefono=?, estado=?, direccion=?, password=? WHERE id=?");
+            $stmtUpd->bind_param("sssssi", $nombre, $telefono, $estadoClienteDB, $direccion, $passHash, $cliente_id);
         } else {
-            $conn->query("UPDATE kaiexper_perpetualife.clientes SET nombre='$nombre', telefono='$telefono', direccion='$direccion' WHERE id=$cliente_id");
+            $stmtUpd = $conn->prepare("UPDATE clientes SET nombre=?, telefono=?, estado=?, direccion=? WHERE id=?");
+            $stmtUpd->bind_param("ssssi", $nombre, $telefono, $estadoClienteDB, $direccion, $cliente_id);
         }
+        $stmtUpd->execute();
     } else {
-        $passHash = NULL;
-        if ($crearCuenta && !empty($newPassword)) {
-            $passHash = password_hash($newPassword, PASSWORD_DEFAULT);
-        }
-        $stmt = $conn->prepare("INSERT INTO kaiexper_perpetualife.clientes (nombre, email, telefono, direccion, estado, password, fecha_registro) VALUES (?, ?, ?, ?, ?, ?, NOW())");
-        $stmt->bind_param("ssssss", $nombre, $email, $telefono, $direccion, $estadoCliente, $passHash);
-        $stmt->execute();
+        // Insert
+        $passHash = ($crearCuenta && !empty($newPassword)) ? password_hash($newPassword, PASSWORD_DEFAULT) : null;
+        $stmtIns = $conn->prepare("INSERT INTO clientes (nombre, email, telefono, direccion, estado, password, fecha_registro) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+        $stmtIns->bind_param("ssssss", $nombre, $email, $telefono, $direccion, $estadoClienteDB, $passHash);
+        $stmtIns->execute();
         $cliente_id = $conn->insert_id;
     }
 
-    // --- 4. INSERTAR PEDIDO ---
-    // Cambia esto en api/confirmar_pago.php
-    $sql_pedido = "INSERT INTO kaiexper_perpetualife.pedidos 
-                (cliente_id, fecha, total, estado, metodo_pago, id_transaccion, paypal_order_id, moneda, cupon) 
-                VALUES (?, NOW(), ?, 'COMPLETADO', 'PayPal', ?, ?, 'MXN', ?)";
-                
-    $stmt = $conn->prepare($sql_pedido);
-    // Agregamos una 's' al final del bind y la variable $cuponCodigo (o $cupon que recibes en el JSON)
-    $stmt->bind_param("idsss", $cliente_id, $totalCalculado, $orderID, $orderID, $cuponCodigo);
+
+    // =========================================================================
+    // PASO 5: INSERTAR PEDIDO
+    // =========================================================================
+    // Nota: Guardamos el cupón usado para referencia futura
+    $sql_pedido = "INSERT INTO pedidos (cliente_id, fecha, total, estado, metodo_pago, id_transaccion, paypal_order_id, moneda, cupon) VALUES (?, NOW(), ?, 'COMPLETADO', 'PayPal', ?, ?, 'MXN', ?)";
+    $stmtPed = $conn->prepare($sql_pedido);
+    $stmtPed->bind_param("idsss", $cliente_id, $totalCalculado, $orderID, $orderID, $cuponCodigo);
     
-    if (!$stmt->execute()) throw new Exception("Error al guardar pedido: " . $stmt->error);
-    
+    if (!$stmtPed->execute()) throw new Exception("Error al guardar pedido: " . $stmtPed->error);
     $pedido_id = $conn->insert_id;
 
-    // --- 5. DETALLES, STOCK Y CUPÓN ---
-    $stmt_detalle = $conn->prepare("INSERT INTO kaiexper_perpetualife.detalles_pedido (pedido_id, producto_id, cantidad, precio_unitario) VALUES (?, ?, ?, ?)");
-    $stmt_stock = $conn->prepare("UPDATE kaiexper_perpetualife.productos SET stock = stock - ? WHERE id = ?");
+
+    // =========================================================================
+    // PASO 6: DETALLES, STOCK Y CONSUMO DE CUPÓN
+    // =========================================================================
+    $stmtDet = $conn->prepare("INSERT INTO detalles_pedido (pedido_id, producto_id, cantidad, precio_unitario) VALUES (?, ?, ?, ?)");
+    $stmtStk = $conn->prepare("UPDATE productos SET stock = stock - ? WHERE id = ?");
 
     $listaProductosHTML = "";
 
     foreach ($itemsProcesados as $item) {
-        // Insertar detalle
-        $stmt_detalle->bind_param("iiid", $pedido_id, $item['id'], $item['cantidad'], $item['precio']);
-        $stmt_detalle->execute();
+        // Detalle
+        $stmtDet->bind_param("iiid", $pedido_id, $item['id'], $item['cantidad'], $item['precio']);
+        $stmtDet->execute();
 
-        // Descontar stock
-        $stmt_stock->bind_param("ii", $item['cantidad'], $item['id']);
-        $stmt_stock->execute();
+        // Restar Stock
+        $stmtStk->bind_param("ii", $item['cantidad'], $item['id']);
+        $stmtStk->execute();
 
-        // HTML para correo
+        // HTML Correo
         $subtotalItem = number_format($item['precio'] * $item['cantidad'], 2);
         $listaProductosHTML .= "
             <tr style='border-bottom: 1px solid #eee;'>
@@ -183,78 +250,67 @@ try {
             </tr>";
     }
 
-    // Quemar cupón (sumar uso)
+    // Quemar Cupón
     if ($idCuponAplicado) {
-        $conn->query("UPDATE kaiexper_perpetualife.cupones SET usos_actuales = usos_actuales + 1 WHERE id = $idCuponAplicado");
-        registrarLog("Cupón ID $idCuponAplicado usado en pedido #$pedido_id");
+        $stmtCupUpd = $conn->prepare("UPDATE cupones SET usos_actuales = usos_actuales + 1 WHERE id = ?");
+        $stmtCupUpd->bind_param("i", $idCuponAplicado);
+        $stmtCupUpd->execute();
     }
 
     $conn->commit();
-    registrarLog("Pedido #$pedido_id guardado exitosamente.");
 
-    // --- 6. ENVIAR CORREO (Usando tu mailer.php existente) ---
-    $asuntoCorreo = "Confirmación de Compra #PERP-" . str_pad($pedido_id, 5, "0", STR_PAD_LEFT);
-    $totalFormateado = number_format($totalCalculado, 2);
-    
-    // Si hubo descuento, lo mostramos en el correo
+
+    // =========================================================================
+    // PASO 7: ENVIAR CORREO DE CONFIRMACIÓN
+    // =========================================================================
     $filaDescuento = "";
     if ($descuentoReal > 0) {
-        $filaDescuento = "
-        <tr>
-            <td colspan='2' style='padding: 5px 10px; text-align: right; color: #ef4444; font-size: 12px;'>Descuento ($infoCupon):</td>
-            <td style='padding: 5px 10px; text-align: right; color: #ef4444; font-size: 12px;'>-$$" . number_format($descuentoReal, 2) . "</td>
-        </tr>";
+        $filaDescuento = "<tr><td colspan='2' style='text-align:right; color:#ef4444; font-size:12px; padding:5px;'>Descuento:</td><td style='text-align:right; color:#ef4444; font-size:12px;'>-$$" . number_format($descuentoReal, 2) . "</td></tr>";
     }
+    
+    $filaEnvio = "<tr><td colspan='2' style='text-align:right; color:#555; font-size:12px; padding:5px;'>Envío:</td><td style='text-align:right; color:#555; font-size:12px;'>" . ($costoEnvio == 0 ? 'GRATIS' : '$' . number_format($costoEnvio, 2)) . "</td></tr>";
 
     $htmlCorreo = "
-    <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 10px; overflow: hidden;'>
-        <div style='background-color: #1e3a8a; color: white; padding: 20px; text-align: center;'>
-            <h1 style='margin: 0; font-size: 24px;'>¡Gracias por tu compra!</h1>
-            <p style='margin: 5px 0 0;'>Orden #$pedido_id</p>
+    <div style='font-family: sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; border-radius: 10px;'>
+        <div style='background: #1e3a8a; color: white; padding: 20px; text-align: center;'>
+            <h2>¡Gracias por tu compra!</h2>
+            <p>Orden #$pedido_id</p>
         </div>
         <div style='padding: 20px;'>
-            <p>Hola <strong>$nombre</strong>,</p>
-            <p>Hemos recibido tu pago correctamente. Aquí tienes el resumen:</p>
+            <p>Hola <strong>" . htmlspecialchars($nombre) . "</strong>,</p>
+            <p>Tu pedido se ha procesado correctamente.</p>
             <table style='width: 100%; border-collapse: collapse; margin-top: 20px;'>
                 <thead>
-                    <tr style='background-color: #f9fafb; text-align: left;'>
-                        <th style='padding: 10px; color: #555;'>Producto</th>
-                        <th style='padding: 10px; text-align: center; color: #555;'>Cant.</th>
-                        <th style='padding: 10px; text-align: right; color: #555;'>Precio</th>
+                    <tr style='background: #f9f9f9; text-align: left;'>
+                        <th style='padding: 10px;'>Producto</th>
+                        <th style='padding: 10px; text-align: center;'>Cant.</th>
+                        <th style='padding: 10px; text-align: right;'>Precio</th>
                     </tr>
                 </thead>
                 <tbody>$listaProductosHTML</tbody>
                 <tfoot>
+                    $filaEnvio
                     $filaDescuento
                     <tr>
-                        <td colspan='2' style='padding: 15px; text-align: right; font-weight: bold; border-top: 2px solid #eee;'>TOTAL PAGADO:</td>
-                        <td style='padding: 15px; text-align: right; font-weight: bold; color: #1e3a8a; font-size: 18px; border-top: 2px solid #eee;'>$$totalFormateado MXN</td>
+                        <td colspan='2' style='text-align: right; font-weight: bold; padding: 15px; border-top: 2px solid #eee;'>TOTAL:</td>
+                        <td style='text-align: right; font-weight: bold; color: #1e3a8a; font-size: 18px; border-top: 2px solid #eee;'>$$" . number_format($totalCalculado, 2) . "</td>
                     </tr>
                 </tfoot>
             </table>
-            <div style='background-color: #f0f9ff; padding: 15px; border-radius: 8px; margin-top: 20px;'>
-                <p style='margin: 0; font-weight: bold; color: #1e3a8a;'>Dirección de Envío:</p>
-                <p style='margin: 5px 0 0; color: #555;'>$direccion</p>
-            </div>
+            <br>
+            <p><strong>Dirección de Envío:</strong><br>" . htmlspecialchars($direccion) . "<br>" . htmlspecialchars($estadoClienteDB) . "</p>
         </div>
     </div>";
 
     if(function_exists('enviarCorreo')) {
-        if(enviarCorreo($email, $asuntoCorreo, $htmlCorreo)) {
-            registrarLog("Correo enviado a $email");
-        } else {
-            registrarLog("FALLO envío de correo (función retornó false)");
-        }
-    } else {
-        // Fallback por si mailer.php no tiene la función (aunque debería)
-        registrarLog("Advertencia: Función enviarCorreo no encontrada.");
+        enviarCorreo($email, "Confirmación de Compra #PERP-" . str_pad($pedido_id, 5, "0", STR_PAD_LEFT), $htmlCorreo);
     }
 
     echo json_encode(['status' => 'success', 'pedido_id' => $pedido_id]);
 
 } catch (Exception $e) {
-    $conn->rollback();
-    registrarLog("FATAL ERROR: " . $e->getMessage());
-    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+    if ($conn->in_transaction) $conn->rollback();
+    registrarLog("ERROR FATAL: " . $e->getMessage());
+    echo json_encode(['status' => 'error', 'message' => 'Error procesando el pedido.']);
 }
 ?>
