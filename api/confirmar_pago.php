@@ -13,10 +13,31 @@ require_once 'mailer.php';
 
 header('Content-Type: application/json');
 
-// Función helper para logs
-function registrarLog($mensaje) {
+// Función HÍBRIDA: Escribe en TXT y en Base de Datos (Bitácora)
+function registrarLog($mensaje, $tipo = 'INFO') {
+    global $conn; // Usamos la conexión global
+
+    // 1. Respaldo en archivo TXT (Por si la BD falla)
     $rutaLog = __DIR__ . '/log_transacciones.txt';
-    file_put_contents($rutaLog, date('Y-m-d H:i:s') . " - " . $mensaje . "\n", FILE_APPEND);
+    file_put_contents($rutaLog, date('Y-m-d H:i:s') . " - [$tipo] " . $mensaje . "\n", FILE_APPEND);
+
+    // 2. Insertar en Bitácora (admin_logs)
+    // Asumimos ID 0 para el SISTEMA. Asegúrate de que tu BD acepte ID 0 o no tenga restricción de llave foránea estricta.
+    // Si tienes restricción, crea un usuario "System" en admin_usuarios y usa su ID aquí.
+    try {
+        if ($conn && !$conn->connect_error) {
+            $modulo = 'CHECKOUT_API';
+            $accion = ($tipo === 'ERROR') ? 'FALLO' : 'PROCESO';
+            
+            // Usamos prepared statements para la bitácora también
+            $stmtLog = $conn->prepare("INSERT INTO kaiexper_perpetualife.admin_logs (admin_id, admin_nombre, modulo, accion, descripcion, fecha) VALUES (0, 'SISTEMA', ?, ?, ?, NOW())");
+            $stmtLog->bind_param("sss", $modulo, $accion, $mensaje);
+            $stmtLog->execute();
+            $stmtLog->close();
+        }
+    } catch (Exception $e) {
+        // Si falla el log en BD, ya tenemos el TXT, no detenemos el flujo.
+    }
 }
 
 // 2. RECEPCIÓN DE DATOS
@@ -315,8 +336,10 @@ try {
 
 } catch (Exception $e) {
     if ($conn->in_transaction) $conn->rollback();
-    registrarLog("ERROR FATAL: " . $e->getMessage());
-    // El frontend recibirá este mensaje y lo mostrará en el alert()
+    
+    // Aquí cambiamos el tipo a 'ERROR' para que resalte en tu Bitácora
+    registrarLog("ERROR FATAL: " . $e->getMessage(), 'ERROR');
+    
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }
 ?>
