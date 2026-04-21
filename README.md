@@ -1,6 +1,6 @@
-# perpetualife
-🛒 Perpetualife - E-commerce Platform
-Perpetualife es una plataforma de comercio electrónico integral diseñada para ofrecer una experiencia de compra fluida y segura. El sistema gestiona desde la visualización de productos hasta la culminación del pago, integrando herramientas modernas de procesamiento financiero.
+# perpetualife | HEALTHYWORLD
+🛒 Perpetualife | HEALTHYWORLD - E-commerce Platform
+Perpetualife | HEALTHYWORLD Es una plataforma de comercio electrónico integral diseñada para ofrecer una experiencia de compra fluida y segura. El sistema gestiona desde la visualización de productos hasta la culminación del pago, integrando herramientas modernas de procesamiento financiero.
 
 🚀 Características Principales
 Catálogo Dinámico: Visualización de productos en tiempo real gestionados desde una base de datos MySQL.
